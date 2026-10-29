@@ -1,0 +1,217 @@
+import http from 'node:http';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { getSystemTelemetry } from './services/telemetryService.js';
+import {
+  getOllamaStatus,
+  generateJarvisResponse,
+  PERSONA_MODES
+} from './services/llmService.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PUBLIC_DIR = path.resolve(__dirname, '../../public');
+
+const MIME_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon'
+};
+
+/**
+ * Reads and parses a JSON request body safely.
+ * @param {http.IncomingMessage} req
+ * @returns {Promise<object>}
+ */
+async function readJsonBody(req) {
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(chunk);
+  }
+  const raw = Buffer.concat(chunks).toString('utf-8').trim();
+  if (!raw) return {};
+  return JSON.parse(raw);
+}
+
+/**
+ * Sends a JSON HTTP response.
+ * @param {http.ServerResponse} res
+ * @param {number} statusCode
+ * @param {object} payload
+ */
+function sendJson(res, statusCode, payload) {
+  const body = JSON.stringify(payload);
+  res.writeHead(statusCode, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store'
+  });
+  res.end(body);
+}
+
+/**
+ * Creates the J.A.R.V.I.S. HTTP server instance.
+ * @returns {http.Server}
+ */
+export function createServer() {
+  return http.createServer(async (req, res) => {
+    try {
+      const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+      const pathname = parsedUrl.pathname;
+
+      if (req.method === 'GET' && pathname === '/api/health') {
+        sendJson(res, 200, {
+          status: 'ONLINE',
+          system: 'STARK INDUSTRIES J.A.R.V.I.S. CORE v85.4',
+          timestamp: new Date().toISOString()
+        });
+        return;
+      }
+
+      if (req.method === 'GET' && pathname === '/api/telemetry') {
+        const customOllamaUrl = parsedUrl.searchParams.get('ollamaUrl') || undefined;
+        const [telemetry, ollama] = await Promise.all([
+          Promise.resolve(getSystemTelemetry()),
+          getOllamaStatus(customOllamaUrl)
+        ]);
+        sendJson(res, 200, { telemetry, ollama });
+        return;
+      }
+
+      if (req.method === 'GET' && pathname === '/api/models') {
+        const customOllamaUrl = parsedUrl.searchParams.get('ollamaUrl') || undefined;
+        const ollama = await getOllamaStatus(customOllamaUrl);
+
+        sendJson(res, 200, {
+          ollama,
+          recommendedOllamaModels: [
+            { name: 'llama3.2:1b', label: 'Llama 3.2 (1B - Ultra Fast, ~1.3GB)' },
+            { name: 'llama3.2', label: 'Llama 3.2 (3B - Balanced, ~2.0GB)' },
+            { name: 'qwen2.5:3b', label: 'Qwen 2.5 (3B - Strong Chinese/English, ~1.9GB)' },
+            { name: 'qwen2.5:7b', label: 'Qwen 2.5 (7B - High Reasoning, ~4.7GB)' },
+            { name: 'gemma2:2b', label: 'Gemma 2 (2B - Compact, ~1.6GB)' }
+          ],
+          cloudCatalog: {
+            gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'],
+            openai: ['gpt-4o', 'gpt-4o-mini', 'o3-mini'],
+            anthropic: ['claude-3-7-sonnet-latest', 'claude-3-5-haiku-latest'],
+            custom: ['deepseek-chat', 'llama-3.3-70b-versatile', 'local-model']
+          },
+          envKeysConfigured: {
+            gemini: Boolean(process.env.GEMINI_API_KEY),
+            openai: Boolean(process.env.OPENAI_API_KEY),
+            anthropic: Boolean(process.env.ANTHROPIC_API_KEY)
+          },
+          personaModes: PERSONA_MODES
+        });
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/ollama/pull') {
+        const body = await readJsonBody(req);
+        const { model, baseUrl } = body;
+
+        if (!model || typeof model !== 'string') {
+          sendJson(res, 400, { error: 'Model name is required, Sir.' });
+          return;
+        }
+
+        const ollamaUrl = (
+          baseUrl ||
+          process.env.OLLAMA_BASE_URL ||
+          'http://127.0.0.1:11434'
+        ).replace(/\/+$/, '');
+
+        const upstream = await fetch(`${ollamaUrl}/api/pull`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: model.trim(), stream: true })
+        });
+
+        if (!upstream.ok || !upstream.body) {
+          const errText = await upstream.text();
+          sendJson(res, upstream.status || 500, {
+            error: `Ollama pull failed: ${errText || upstream.statusText}`
+          });
+          return;
+        }
+
+        res.writeHead(200, {
+          'Content-Type': 'application/x-ndjson; charset=utf-8',
+          'Transfer-Encoding': 'chunked'
+        });
+
+        const reader = upstream.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+        res.end();
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/chat') {
+        const body = await readJsonBody(req);
+        const {
+          provider = 'ollama',
+          model = 'llama3.2',
+          messages = [],
+          personaMode = 'butler',
+          language = 'auto',
+          honorific = 'Sir',
+          apiKey = '',
+          baseUrl = ''
+        } = body;
+
+        if (!Array.isArray(messages) || messages.length === 0) {
+          sendJson(res, 400, { error: 'No transmission payload detected, Sir.' });
+          return;
+        }
+
+        const result = await generateJarvisResponse({
+          provider,
+          model,
+          messages,
+          personaMode,
+          language,
+          honorific,
+          apiKey,
+          baseUrl
+        });
+
+        sendJson(res, 200, result);
+        return;
+      }
+
+      // Serve static files from /public
+      const relativePath = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
+      const safePath = path.normalize(relativePath).replace(/^(\.\.(\/|\\|$))+/, '');
+      const fullPath = path.join(PUBLIC_DIR, safePath);
+
+      if (!fullPath.startsWith(PUBLIC_DIR)) {
+        sendJson(res, 403, { error: 'Access denied by Stark Firewall.' });
+        return;
+      }
+
+      const fileBuffer = await fs.readFile(fullPath);
+      const ext = path.extname(fullPath).toLowerCase();
+      res.writeHead(200, {
+        'Content-Type': MIME_TYPES[ext] || 'application/octet-stream'
+      });
+      res.end(fileBuffer);
+    } catch (error) {
+      if (error && error.code === 'ENOENT') {
+        sendJson(res, 404, { error: 'Holographic resource not found, Sir.' });
+        return;
+      }
+      sendJson(res, 500, {
+        error: error instanceof Error ? error.message : 'Internal mainframe exception'
+      });
+    }
+  });
+}

@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>J.A.R.V.I.S. // STARK INDUSTRIES MARK LXXXV HUD</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Orbitron:wght@500;700;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/css/hud.css" />
+  </head>
+  <body>
+    <div class="hud-shell">
+      <!-- TOP TELEMETRY BAR -->
+      <header class="hud-header">
+        <div class="brand-cluster">
+          <div class="brand-emblem"></div>
+          <div>
+            <div class="brand-title">J.A.R.V.I.S. // MARK LXXXV OS</div>
+            <div class="brand-subtitle">
+              JUST A RATHER VERY INTELLIGENT SYSTEM &bull; STARK INDUSTRIES
+            </div>
+          </div>
+        </div>
+
+        <div class="header-telemetry">
+          <div class="telemetry-pill">
+            <span id="ollamaStatusDot" class="status-dot"></span>
+            <span>NEURAL LINK:</span>
+            <strong id="activeProviderLabel">OLLAMA LOCAL</strong>
+          </div>
+          <div class="telemetry-pill">
+            <span>ARC OUTPUT:</span>
+            <strong id="arcOutputHeader">98.8%</strong>
+          </div>
+          <div class="telemetry-pill">
+            <span>SYS TIME:</span>
+            <strong id="hudClock">--:--:--</strong>
+          </div>
+          <button id="bootAudioBtn" class="hud-btn" title="Initialize HUD Audio & Greeting">
+            ENGAGE HUD AUDIO
+          </button>
+        </div>
+      </header>
+
+      <!-- MAIN 3-COLUMN HUD -->
+      <main class="hud-main">
+        <!-- LEFT PANEL: LLM LOADER & SYSTEM DIAGNOSTICS -->
+        <aside class="hud-panel">
+          <!-- NEURAL CORE MATRIX -->
+          <section class="panel-section">
+            <div class="section-header">
+              <span class="section-title">01 // NEURAL CORE MATRIX</span>
+              <span id="ollamaConnBadge" class="section-badge">SCANNING</span>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="providerSelect">
+                <span>LLM PROVIDER</span>
+                <span>CORE ENGINE</span>
+              </label>
+              <select id="providerSelect" class="hud-select">
+                <option value="ollama">Local Ollama (Stark Mainframe)</option>
+                <option value="gemini">Google Gemini API</option>
+                <option value="openai">OpenAI / GPT API</option>
+                <option value="anthropic">Anthropic Claude API</option>
+                <option value="custom">Custom OpenAI-Compatible URL</option>
+              </select>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="modelSelect">
+                <span>ACTIVE MODEL</span>
+                <button
+                  id="refreshModelsBtn"
+                  type="button"
+                  style="background:none;border:none;color:var(--cyan);cursor:pointer;font-size:0.68rem;"
+                >
+                  [REFRESH]
+                </button>
+              </label>
+              <select id="modelSelect" class="hud-select"></select>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="customModelInput">
+                <span>CUSTOM MODEL OVERRIDE (OPTIONAL)</span>
+              </label>
+              <input
+                id="customModelInput"
+                type="text"
+                class="hud-input"
+                placeholder="e.g. llama3.2, qwen2.5:7b, gpt-4o"
+              />
+            </div>
+
+            <!-- Cloud / Endpoint Credentials (Dynamic) -->
+            <div id="endpointConfigGroup" class="field-group">
+              <label class="field-label" for="baseUrlInput">
+                <span id="baseUrlLabel">OLLAMA BASE URL</span>
+              </label>
+              <input
+                id="baseUrlInput"
+                type="text"
+                class="hud-input"
+                value="http://127.0.0.1:11434"
+              />
+            </div>
+
+            <div id="apiKeyGroup" class="field-group hidden">
+              <label class="field-label" for="apiKeyInput">
+                <span>API KEY (OR CONFIGURED VIA .ENV)</span>
+              </label>
+              <input
+                id="apiKeyInput"
+                type="password"
+                class="hud-input"
+                placeholder="Enter provider API Key..."
+              />
+            </div>
+          </section>
+
+          <!-- OLLAMA ONE-CLICK MODEL DEPLOYER -->
+          <section id="ollamaPullSection" class="panel-section">
+            <div class="section-header">
+              <span class="section-title">02 // OLLAMA CORE DEPLOYER</span>
+              <span class="section-badge amber">LOCAL GGUF</span>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="pullModelSelect">
+                <span>INSTALL NEURAL CORE TO OLLAMA</span>
+              </label>
+              <select id="pullModelSelect" class="hud-select">
+                <option value="llama3.2:1b">llama3.2:1b (Ultra Fast &bull; 1.3GB)</option>
+                <option value="llama3.2">llama3.2:3b (Balanced &bull; 2.0GB)</option>
+                <option value="qwen2.5:3b">qwen2.5:3b (繁中/English &bull; 1.9GB)</option>
+                <option value="qwen2.5:7b">qwen2.5:7b (Pro Reasoning &bull; 4.7GB)</option>
+                <option value="gemma2:2b">gemma2:2b (Compact &bull; 1.6GB)</option>
+              </select>
+            </div>
+
+            <button id="pullModelBtn" type="button" class="hud-btn amber">
+              PULL &amp; LOAD LOCAL MODEL
+            </button>
+
+            <div id="pullProgressBox" class="metric-row hidden">
+              <div class="metric-head">
+                <span id="pullStatusText">INITIALIZING DOWNLOAD...</span>
+                <span id="pullPercentText">0%</span>
+              </div>
+              <div class="metric-bar-track">
+                <div id="pullProgressBar" class="metric-bar-fill amber" style="width: 0%"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- REAL-TIME HOST TELEMETRY -->
+          <section class="panel-section">
+            <div class="section-header">
+              <span class="section-title">03 // MAINFRAME TELEMETRY</span>
+              <span id="hostPlatformBadge" class="section-badge">HOST</span>
+            </div>
+
+            <div class="metric-row">
+              <div class="metric-head">
+                <span>CPU NEURAL LOAD</span>
+                <strong id="cpuLoadText">--%</strong>
+              </div>
+              <div class="metric-bar-track">
+                <div id="cpuLoadBar" class="metric-bar-fill" style="width: 15%"></div>
+              </div>
+            </div>
+
+            <div class="metric-row">
+              <div class="metric-head">
+                <span>MEMORY ALLOCATION</span>
+                <strong id="memLoadText">-- / -- GB</strong>
+              </div>
+              <div class="metric-bar-track">
+                <div id="memLoadBar" class="metric-bar-fill" style="width: 40%"></div>
+              </div>
+            </div>
+
+            <div class="metric-row">
+              <div class="metric-head">
+                <span>MARK LXXXV INTEGRITY</span>
+                <strong style="color: var(--emerald)">100% NOMINAL</strong>
+              </div>
+              <div class="metric-bar-track">
+                <div class="metric-bar-fill" style="width: 100%"></div>
+              </div>
+            </div>
+
+            <div style="font-size: 0.68rem; color: var(--text-muted); margin-top: 4px">
+              <div>PROCESSOR: <span id="cpuModelText">Scanning...</span></div>
+              <div>HOST NODE: <span id="hostnameText">Stark-Mainframe</span></div>
+            </div>
+          </section>
+        </aside>
+
+        <!-- CENTER PANEL: ARC REACTOR VISUALIZER & COMMS CONSOLE -->
+        <section class="hud-center">
+          <!-- ARC REACTOR CORE -->
+          <div class="reactor-stage">
+            <div class="reactor-hud-overlay">
+              <div>
+                <div>CORE: MARK LXXXV RT-NODE</div>
+                <div>FREQ: 432.8 THz // HARMONIC SYNC</div>
+              </div>
+              <div style="text-align: right">
+                <div>LATENCY: <span id="lastLatencyText">0 ms</span></div>
+                <div>PROTOCOL: <span id="activeProtocolText">BUTLER</span></div>
+              </div>
+            </div>
+
+            <canvas id="arcReactorCanvas" width="215" height="215"></canvas>
+
+            <div id="reactorStateBanner" class="reactor-state-banner">
+              ONLINE // AWAITING COMMAND, SIR
+            </div>
+          </div>
+
+          <!-- HOLOGRAPHIC COMMS LOG -->
+          <div id="commsConsole" class="comms-console"></div>
+
+          <!-- COMMAND TRANSMISSION BAR -->
+          <form id="chatForm" class="command-deck">
+            <button
+              id="micBtn"
+              type="button"
+              class="hud-btn"
+              title="Voice Input (Speech-to-Text)"
+            >
+              MIC: OFF
+            </button>
+            <input
+              id="userInput"
+              type="text"
+              class="command-input"
+              placeholder="Ask J.A.R.V.I.S. anything, Sir... (支援繁體中文與英文語音問答)"
+              autocomplete="off"
+            />
+            <button id="sendBtn" type="submit" class="hud-btn">
+              TRANSMIT
+            </button>
+            <button
+              id="stopVoiceBtn"
+              type="button"
+              class="hud-btn danger"
+              title="Mute Current Speech"
+            >
+              MUTE
+            </button>
+          </form>
+        </section>
+
+        <!-- RIGHT PANEL: VOCAL MODULATION & PERSONA MATRIX -->
+        <aside class="hud-panel">
+          <section class="panel-section">
+            <div class="section-header">
+              <span class="section-title">04 // J.A.R.V.I.S. PERSONA</span>
+              <span class="section-badge">TONE MATRIX</span>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="personaSelect">
+                <span>PERSONALITY PROTOCOL</span>
+              </label>
+              <select id="personaSelect" class="hud-select">
+                <option value="butler">Standard British Butler (Refined &amp; Polite)</option>
+                <option value="tactical">Mark LXXXV Combat &amp; Tactical Analysis</option>
+                <option value="witty">Dry Stark-Level Sarcasm &amp; Wit</option>
+              </select>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="languageSelect">
+                <span>RESPONSE LANGUAGE</span>
+              </label>
+              <select id="languageSelect" class="hud-select">
+                <option value="auto">Auto-Detect (依提問語言自動切換)</option>
+                <option value="zh-TW">繁體中文 (英國管家紳士語調)</option>
+                <option value="en-GB">British English (Classic J.A.R.V.I.S.)</option>
+              </select>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="honorificInput">
+                <span>ADDRESS USER AS (稱呼設定)</span>
+              </label>
+              <input
+                id="honorificInput"
+                type="text"
+                class="hud-input"
+                value="Sir"
+                placeholder="Sir / 先生 / Boss"
+              />
+            </div>
+          </section>
+
+          <!-- VOCAL SYNTHESIS & SCI-FI FILTER -->
+          <section class="panel-section">
+            <div class="section-header">
+              <span class="section-title">05 // VOCAL SYNTHESIZER</span>
+              <span class="section-badge">WEB AUDIO DSP</span>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="voiceSelect">
+                <span>TTS VOICE ENGINE</span>
+              </label>
+              <select id="voiceSelect" class="hud-select">
+                <option value="">Auto-Select Best J.A.R.V.I.S. Voice</option>
+              </select>
+            </div>
+
+            <div class="slider-row">
+              <div class="field-label">
+                <span>VOCAL PITCH (音調深沉度)</span>
+                <strong id="pitchValText">0.92</strong>
+              </div>
+              <input
+                id="pitchSlider"
+                type="range"
+                min="0.65"
+                max="1.35"
+                step="0.02"
+                value="0.92"
+              />
+            </div>
+
+            <div class="slider-row">
+              <div class="field-label">
+                <span>CADENCE RATE (語速節奏)</span>
+                <strong id="rateValText">1.04x</strong>
+              </div>
+              <input
+                id="rateSlider"
+                type="range"
+                min="0.75"
+                max="1.45"
+                step="0.02"
+                value="1.04"
+              />
+            </div>
+
+            <div class="toggle-grid">
+              <div id="toggleVoiceBtn" class="toggle-chip active">
+                <span>VOICE TTS</span>
+                <strong>ON</strong>
+              </div>
+              <div id="toggleResonanceBtn" class="toggle-chip active">
+                <span>SCI-FI FILTER</span>
+                <strong>ON</strong>
+              </div>
+              <div id="toggleSfxBtn" class="toggle-chip active">
+                <span>HUD SFX</span>
+                <strong>ON</strong>
+              </div>
+              <div id="testVoiceBtn" class="toggle-chip">
+                <span>VOICE CHECK</span>
+                <strong>TEST</strong>
+              </div>
+            </div>
+          </section>
+
+          <!-- TACTICAL QUICK DIRECTIVES -->
+          <section class="panel-section">
+            <div class="section-header">
+              <span class="section-title">06 // TACTICAL DIRECTIVES</span>
+              <span class="section-badge">QUICK ASK</span>
+            </div>
+
+            <div class="quick-directives">
+              <button
+                type="button"
+                class="directive-btn"
+                data-prompt="JARVIS，請用你招牌的英國管家語氣向我進行馬克85號裝甲與系統狀態簡報。"
+              >
+                &gt; 裝甲與系統狀態簡報 (繁中)
+              </button>
+              <button
+                type="button"
+                class="directive-btn"
+                data-prompt="J.A.R.V.I.S., run a full diagnostic on the Mark LXXXV armor and give me a status report."
+              >
+                &gt; Mark LXXXV Full Diagnostic (EN)
+              </button>
+              <button
+                type="button"
+                class="directive-btn"
+                data-prompt="JARVIS，請幫我分析目前人工智慧 Agent 與本地端 LLM 未來的技術趨勢，並給出你的戰術建議。"
+              >
+                &gt; AI Agent 與本地 LLM 戰術分析
+              </button>
+              <button
+                type="button"
+                class="directive-btn"
+                data-prompt="JARVIS，我想設計一套高併發微服務架構，請給我核心設計原則與防護建議。"
+              >
+                &gt; 高併發系統架構戰術建議
+              </button>
+            </div>
+
+            <button
+              id="clearHistoryBtn"
+              type="button"
+              class="hud-btn"
+              style="margin-top: 4px"
+            >
+              PURGE COMMS LOG
+            </button>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <script type="module" src="/js/main.js"></script>
+  </body>
+</html>
