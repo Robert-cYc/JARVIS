@@ -28,16 +28,16 @@
 
         <div class="header-telemetry">
           <div class="telemetry-pill">
-            <span>SUIT THEME:</span>
+            <span>SUIT:</span>
             <select
               id="suitThemeSelect"
               class="hud-select"
-              style="padding: 2px 6px; font-size: 0.72rem; width: auto"
+              style="padding: 1px 4px; font-size: 0.68rem; width: auto"
             >
-              <option value="mark85">MARK LXXXV (Cyan/Gold)</option>
-              <option value="hulkbuster">HULKBUSTER XLIV (Crimson/Gold)</option>
-              <option value="stealth">STEALTH MK XV (Night Emerald)</option>
-              <option value="warmachine">WAR MACHINE (Silver/Blue)</option>
+              <option value="mark85">MARK LXXXV (Cyan)</option>
+              <option value="hulkbuster">HULKBUSTER (Crimson)</option>
+              <option value="stealth">STEALTH MK XV (Emerald)</option>
+              <option value="warmachine">WAR MACHINE (Silver)</option>
             </select>
           </div>
           <div class="telemetry-pill">
@@ -53,6 +53,14 @@
             <span>TIME:</span>
             <strong id="hudClock">--:--:--</strong>
           </div>
+          <button
+            id="cmdPaletteBtn"
+            type="button"
+            class="hud-btn amber"
+            title="Open Stark Holographic Command Palette (Ctrl+K)"
+          >
+            ⌘ CMD (Ctrl+K)
+          </button>
           <button
             id="wakeWordBtn"
             type="button"
@@ -533,34 +541,75 @@
             </div>
           </section>
 
-          <!-- TACTICAL QUICK DIRECTIVES -->
+          <!-- TACTICAL QUICK DIRECTIVES & MOVIE PROTOCOLS -->
           <section class="panel-section">
             <div class="section-header">
-              <span class="section-title">07 // TACTICAL DIRECTIVES</span>
-              <span class="section-badge">QUICK ASK</span>
+              <span class="section-title">07 // R&amp;D, CYBER &amp; PROTOCOLS</span>
+              <span class="section-badge">STARK LABS</span>
+            </div>
+
+            <!-- Iconic Movie Protocols -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 4px">
+              <button
+                id="housePartyBtn"
+                type="button"
+                class="hud-btn amber"
+                title="Deploy Mark I - Mark LXXXV Iron Legion Fleet"
+              >
+                🎉 HOUSE PARTY
+              </button>
+              <button
+                id="veronicaBtn"
+                type="button"
+                class="hud-btn danger"
+                title="Engage Hulkbuster Orbital Defense & Cyber Port Lockdown"
+              >
+                🚨 VERONICA
+              </button>
             </div>
 
             <div class="quick-directives">
               <button
                 type="button"
                 class="directive-btn"
-                data-prompt="JARVIS，請針對我這台主機的 CPU、記憶體、IP 位址與運行時間進行深層硬體診斷簡報。"
+                data-prompt="JARVIS，請執行本機連接埠與網路資安掃描 (Port Scan & Latency Check)，檢查目前開啟的本機服務與網路延遲。"
               >
-                &gt; 🛠️ 深層主機硬體、網路與記憶體診斷
+                &gt; 🛡️ 本機 Port 與網路資安掃描 (Live)
               </button>
               <button
                 type="button"
                 class="directive-btn"
-                data-prompt="JARVIS，請在 YouTube 搜尋 Iron Man AC/DC Soundtrack"
+                data-prompt="JARVIS，請幫我查詢 ArXiv 最新關於 Large Language Models 與 AI Agent 的學術研究論文。"
               >
-                &gt; 🚀 語音啟動 YouTube 搜尋鋼鐵人配樂
+                &gt; 📚 ArXiv 最新 AI 學術論文檢索 (Live)
               </button>
               <button
                 type="button"
                 class="directive-btn"
-                data-prompt="J.A.R.V.I.S., run a full diagnostic on the Mark LXXXV armor and give me a status report."
+                data-prompt="JARVIS，請幫我搜尋 GitHub 上最熱門的 AI Agent 開源專案。"
               >
-                &gt; Mark LXXXV Full Diagnostic (EN)
+                &gt; 💻 GitHub 熱門開源專案搜尋 (Live)
+              </button>
+              <button
+                type="button"
+                class="directive-btn"
+                data-prompt="JARVIS，請幫我查詢今天矽谷 HackerNews 最熱門的科技創業頭條。"
+              >
+                &gt; 🔥 矽谷 HackerNews 科技頭條 (Live)
+              </button>
+              <button
+                type="button"
+                class="directive-btn"
+                data-prompt="JARVIS，請幫我精確計算 sha256: STARK-MARK-85 以及 (256 * 1024) / 8 的數值。"
+              >
+                &gt; 🧮 量子沙盒：精確數學與 SHA-256 運算
+              </button>
+              <button
+                type="button"
+                class="directive-btn"
+                data-prompt="JARVIS，請啟動雙向同步口譯模式：將『我們已經完成量子反應爐的能源校準，隨時可以進行全球部署』翻譯成優雅的皇室英式英文與商務日文。"
+              >
+                &gt; 🌐 萬國同步口譯官 (中/英/日商務翻譯)
               </button>
             </div>
 
@@ -575,6 +624,24 @@
           </section>
         </aside>
       </main>
+    </div>
+
+    <!-- HOLOGRAPHIC COMMAND PALETTE MODAL (Ctrl+K) -->
+    <div id="commandPaletteModal" class="cmd-modal-backdrop hidden">
+      <div class="cmd-modal">
+        <div class="cmd-modal-header">
+          <span>⌘ STARK HOLOGRAPHIC COMMAND PALETTE // DIRECTIVE LAUNCHER</span>
+          <button id="closeCmdPaletteBtn" type="button" class="msg-replay-btn">[ESC]</button>
+        </div>
+        <input
+          id="cmdPaletteInput"
+          type="text"
+          class="hud-input"
+          placeholder="Type a command, skill, suit theme, or protocol (e.g. port scan, arxiv, house party, weather)..."
+          autocomplete="off"
+        />
+        <div id="cmdPaletteList" class="cmd-palette-list"></div>
+      </div>
     </div>
 
     <script type="module" src="/js/main.js"></script>

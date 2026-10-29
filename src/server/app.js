@@ -15,8 +15,15 @@ import {
   browseUrlContent,
   fetchWeatherTelemetry,
   fetchMarketTelemetry,
-  generateMorningBriefing
+  generateMorningBriefing,
+  fetchHackerNewsTop,
+  searchArxivPapers,
+  searchGithubRepos
 } from './services/webSkillsService.js';
+import {
+  runCyberSecurityScan,
+  evaluateQuantumSandbox
+} from './services/networkScannerService.js';
 import {
   getVaultState,
   addMemory,
@@ -237,6 +244,37 @@ export function createServer() {
         const pendingTasks = (vault.tasks || []).filter((t) => !t.completed);
         const briefing = await generateMorningBriefing({ city, pendingTasks });
         sendJson(res, 200, briefing);
+        return;
+      }
+
+      if (req.method === 'GET' && pathname === '/api/skills/cyber-scan') {
+        const scan = await runCyberSecurityScan();
+        sendJson(res, 200, scan);
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/skills/sandbox') {
+        const { expression } = await readJsonBody(req);
+        const result = evaluateQuantumSandbox(expression || '');
+        sendJson(res, 200, result);
+        return;
+      }
+
+      if (req.method === 'GET' && pathname === '/api/skills/rnd') {
+        const type = parsedUrl.searchParams.get('type') || 'arxiv';
+        const query = parsedUrl.searchParams.get('q') || '';
+        if (type === 'hn') {
+          const hn = await fetchHackerNewsTop(6);
+          sendJson(res, 200, hn);
+          return;
+        }
+        if (type === 'github') {
+          const gh = await searchGithubRepos(query || 'ai agent', 5);
+          sendJson(res, 200, gh);
+          return;
+        }
+        const arxiv = await searchArxivPapers(query || 'large language models', 5);
+        sendJson(res, 200, arxiv);
         return;
       }
 

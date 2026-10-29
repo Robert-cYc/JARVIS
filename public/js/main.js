@@ -139,7 +139,15 @@ class JarvisHudController {
       fileUploadInput: document.getElementById('fileUploadInput'),
       attachFileBtn: document.getElementById('attachFileBtn'),
       scanScreenBtn: document.getElementById('scanScreenBtn'),
-      opticCamBtn: document.getElementById('opticCamBtn')
+      opticCamBtn: document.getElementById('opticCamBtn'),
+
+      cmdPaletteBtn: document.getElementById('cmdPaletteBtn'),
+      commandPaletteModal: document.getElementById('commandPaletteModal'),
+      closeCmdPaletteBtn: document.getElementById('closeCmdPaletteBtn'),
+      cmdPaletteInput: document.getElementById('cmdPaletteInput'),
+      cmdPaletteList: document.getElementById('cmdPaletteList'),
+      housePartyBtn: document.getElementById('housePartyBtn'),
+      veronicaBtn: document.getElementById('veronicaBtn')
     };
   }
 
@@ -520,6 +528,58 @@ class JarvisHudController {
       });
     }
 
+    // Iconic Movie Protocols & Command Palette (Ctrl+K)
+    if (this.dom.housePartyBtn) {
+      this.dom.housePartyBtn.addEventListener('click', () => {
+        this.triggerHousePartyProtocol();
+      });
+    }
+
+    if (this.dom.veronicaBtn) {
+      this.dom.veronicaBtn.addEventListener('click', () => {
+        this.triggerVeronicaProtocol();
+      });
+    }
+
+    if (this.dom.cmdPaletteBtn) {
+      this.dom.cmdPaletteBtn.addEventListener('click', () => {
+        this.openCommandPalette();
+      });
+    }
+
+    if (this.dom.closeCmdPaletteBtn) {
+      this.dom.closeCmdPaletteBtn.addEventListener('click', () => {
+        this.closeCommandPalette();
+      });
+    }
+
+    if (this.dom.commandPaletteModal) {
+      this.dom.commandPaletteModal.addEventListener('click', (e) => {
+        if (e.target === this.dom.commandPaletteModal) {
+          this.closeCommandPalette();
+        }
+      });
+    }
+
+    if (this.dom.cmdPaletteInput) {
+      this.dom.cmdPaletteInput.addEventListener('input', () => {
+        this._renderCommandPaletteItems(this.dom.cmdPaletteInput.value);
+      });
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        if (this.dom.commandPaletteModal?.classList.contains('hidden')) {
+          this.openCommandPalette();
+        } else {
+          this.closeCommandPalette();
+        }
+      } else if (e.key === 'Escape' && !this.dom.commandPaletteModal?.classList.contains('hidden')) {
+        this.closeCommandPalette();
+      }
+    });
+
     // Optic Vision Scanner (Screen Capture & Webcam)
     if (this.dom.scanScreenBtn) {
       this.dom.scanScreenBtn.addEventListener('click', () => this.handleScanScreen());
@@ -887,6 +947,247 @@ class JarvisHudController {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+  }
+
+  openCommandPalette() {
+    if (!this.dom.commandPaletteModal) return;
+    this.audio.playHudClick(2150);
+    this.dom.commandPaletteModal.classList.remove('hidden');
+    if (this.dom.cmdPaletteInput) {
+      this.dom.cmdPaletteInput.value = '';
+      this._renderCommandPaletteItems('');
+      setTimeout(() => this.dom.cmdPaletteInput.focus(), 40);
+    }
+  }
+
+  closeCommandPalette() {
+    if (!this.dom.commandPaletteModal) return;
+    this.audio.playHudClick(1400);
+    this.dom.commandPaletteModal.classList.add('hidden');
+  }
+
+  _renderCommandPaletteItems(filterText = '') {
+    if (!this.dom.cmdPaletteList) return;
+    this.dom.cmdPaletteList.innerHTML = '';
+
+    const directives = [
+      {
+        title: '🎉 Engage House Party Protocol (啟動狂歡派對協定：全裝甲機甲集結)',
+        tag: 'MOVIE PROTOCOL',
+        action: () => this.triggerHousePartyProtocol()
+      },
+      {
+        title: '🚨 Engage Veronica Lockdown (啟動維羅妮卡戰備封鎖與本機資安掃描)',
+        tag: 'DEFENSE PROTOCOL',
+        action: () => this.triggerVeronicaProtocol()
+      },
+      {
+        title: '🛡️ Run Cyber-Security & Localhost TCP Port Scan (本機連接埠與網路延遲掃描)',
+        tag: 'CYBER SECURITY',
+        action: () =>
+          this.handleSendMessage(
+            'JARVIS，請執行本機連接埠與網路資安掃描 (Port Scan & Latency Check)，檢查目前開啟的本機服務與網路延遲。'
+          )
+      },
+      {
+        title: '🌅 Stark Morning Briefing (早安綜合簡報：天氣 + 股市 + 新聞 + 待辦)',
+        tag: 'DAILY BRIEFING',
+        action: () =>
+          this.handleSendMessage(
+            '早安 JARVIS，請為我進行今日晨間綜合簡報（包含即時天氣、金融市場行情、台灣與科技頭條新聞以及我的待辦事項）。'
+          )
+      },
+      {
+        title: '📚 Search ArXiv Latest AI & LLM Research Papers (搜尋最新 ArXiv AI 論文)',
+        tag: 'STARK R&D',
+        action: () =>
+          this.handleSendMessage(
+            'JARVIS，請幫我查詢 ArXiv 最新關於 Large Language Models 與 AI Agent 的學術研究論文。'
+          )
+      },
+      {
+        title: '💻 Search GitHub Trending AI Repositories (搜尋 GitHub 熱門開源專案)',
+        tag: 'STARK R&D',
+        action: () =>
+          this.handleSendMessage('JARVIS，請幫我搜尋 GitHub 上最熱門的 AI Agent 開源專案。')
+      },
+      {
+        title: '🔥 Silicon Valley HackerNews Top Stories (矽谷 HackerNews 科技頭條)',
+        tag: 'TECH FEED',
+        action: () =>
+          this.handleSendMessage('JARVIS，請幫我查詢今天矽谷 HackerNews 最熱門的科技創業頭條。')
+      },
+      {
+        title: '🧮 Quantum Sandbox: SHA-256 & Math Evaluator (量子沙盒精確計算與雜湊)',
+        tag: 'SANDBOX',
+        action: () =>
+          this.handleSendMessage(
+            'JARVIS，請幫我精確計算 sha256: STARK-MARK-85 以及 (256 * 1024) / 8 的數值。'
+          )
+      },
+      {
+        title: '🌐 Simultaneous Universal Translator (萬國同步口譯模式)',
+        tag: 'TRANSLATOR',
+        action: () =>
+          this.handleSendMessage(
+            'JARVIS，請啟動雙向同步口譯模式：將『我們已經完成量子反應爐的能源校準，隨時可以進行全球部署』翻譯成優雅的皇室英式英文與商務日文。'
+          )
+      },
+      {
+        title: '🎨 Switch Suit Theme: HULKBUSTER XLIV (切換浩克毀滅者裝甲主題)',
+        tag: 'HUD THEME',
+        action: () => {
+          this.dom.suitThemeSelect.value = 'hulkbuster';
+          this.applySuitTheme('hulkbuster');
+          this._saveSettings();
+        }
+      },
+      {
+        title: '🎨 Switch Suit Theme: STEALTH MK XV (切換夜行匿蹤裝甲主題)',
+        tag: 'HUD THEME',
+        action: () => {
+          this.dom.suitThemeSelect.value = 'stealth';
+          this.applySuitTheme('stealth');
+          this._saveSettings();
+        }
+      },
+      {
+        title: '🎨 Switch Suit Theme: MARK LXXXV (切換經典馬克 85 號青金主題)',
+        tag: 'HUD THEME',
+        action: () => {
+          this.dom.suitThemeSelect.value = 'mark85';
+          this.applySuitTheme('mark85');
+          this._saveSettings();
+        }
+      },
+      {
+        title: '📥 Export Session Report as Markdown (.MD 戰術簡報匯出)',
+        tag: 'EXPORT',
+        action: () => this.handleExportMarkdownReport()
+      }
+    ];
+
+    const q = filterText.trim().toLowerCase();
+    const matched = directives.filter(
+      (d) => !q || d.title.toLowerCase().includes(q) || d.tag.toLowerCase().includes(q)
+    );
+
+    for (const item of matched) {
+      const row = document.createElement('div');
+      row.className = 'cmd-palette-item';
+
+      const titleSpan = document.createElement('span');
+      titleSpan.textContent = item.title;
+
+      const tagSpan = document.createElement('span');
+      tagSpan.className = 'cmd-palette-tag';
+      tagSpan.textContent = item.tag;
+
+      row.appendChild(titleSpan);
+      row.appendChild(tagSpan);
+
+      row.addEventListener('click', () => {
+        this.closeCommandPalette();
+        item.action();
+      });
+
+      this.dom.cmdPaletteList.appendChild(row);
+    }
+  }
+
+  triggerHousePartyProtocol() {
+    this.audio.playBootSequence();
+    const honorific = this.dom.honorificInput.value || 'Sir';
+    const suits = [
+      'MARK VII (Tactical Heavy Deployment) — Flight Thrusters: 100% ONLINE',
+      'MARK XV "SNEAKY" (Stealth Cloaking Array) — Radar Cross-Section: 0.001 m²',
+      'MARK XVII "HEARTBREAKER" (Artillery Level RT) — Unibeam Charged: 140%',
+      'MARK XXXIII "SILVER CENTURION" (Enhanced Energy Blade) — Engaged',
+      'MARK XXXVIII "IGOR" (Heavy Lifting Rig) — Hydraulic Stabilizers Locked',
+      'MARK XL "SHOTGUN" (Hyper-Velocity Mach 5+) — Sub-Orbital Ready',
+      'MARK XLIV "HULKBUSTER" (Veronica Satellite Pod) — Orbital Standby',
+      'MARK LXXXV (Nanotech Prime Bleeding-Edge) — Neural Link Synced to Sir'
+    ];
+
+    const report =
+      `🎉 **[HOUSE PARTY PROTOCOL INITIATED // 狂歡派對協定全面啟動]**\n\n` +
+      `At your command, ${honorific}. Opening Stark Mansion subterranean armor vaults and deploying the entire Iron Legion fleet:\n\n` +
+      '```text\n' +
+      suits.map((s, idx) => `[LEGION-0${idx + 1}] ${s}`).join('\n') +
+      '\n```\n\n' +
+      `All 8 primary combat armors are airborne and locked onto your telemetry beacon. Shall I cue the AC/DC soundtrack, ${honorific}?`;
+
+    const speech = `House Party Protocol initiated, ${honorific}. 狂歡派對協定已啟動，所有馬克系列機甲已從地下裝甲庫全數升空，隨時聽候您的戰術指揮。`;
+
+    this.appendMessage({
+      role: 'assistant',
+      sender: 'J.A.R.V.I.S. // IRON LEGION COMMAND',
+      content: report,
+      speechText: speech,
+      badge: 'HOUSE PARTY PROTOCOL // ENGAGED'
+    });
+    this.audio.speak(speech);
+  }
+
+  async triggerVeronicaProtocol() {
+    this.audio.playBootSequence();
+    const honorific = this.dom.honorificInput.value || 'Sir';
+
+    // Switch HUD to Hulkbuster Crimson/Gold & Tactical Persona
+    if (this.dom.suitThemeSelect) {
+      this.dom.suitThemeSelect.value = 'hulkbuster';
+      this.applySuitTheme('hulkbuster');
+    }
+    if (this.dom.personaSelect) {
+      this.dom.personaSelect.value = 'tactical';
+      this.dom.activeProtocolText.textContent = 'TACTICAL';
+    }
+    this._saveSettings();
+
+    this.dom.reactorStateBanner.textContent =
+      '🚨 VERONICA PROTOCOL ENGAGED // PERFORMING LIVE CYBER & PORT SWEEP';
+
+    try {
+      const res = await fetch('/api/skills/cyber-scan');
+      const scan = await res.json();
+      const openList = (scan.openPorts || [])
+        .map((p) => `- Port ${p.port} (${p.service}): OPEN [${p.latencyMs}ms]`)
+        .join('\n');
+
+      const report =
+        `🚨 **[VERONICA ORBITAL DEFENSE & CYBER LOCKDOWN // 維羅妮卡戰備協定已啟動]**\n\n` +
+        `HUD switched to **HULKBUSTER XLIV (Crimson/Gold)** combat mode. Real-time host perimeter and TCP port sweep completed:\n\n` +
+        `- **Security Posture**: \`${scan.securityStatus || 'NOMINAL'}\`\n` +
+        `- **Satellite Uplink Latency**: \`${scan.internetLatencyMs ?? 'N/A'} ms\`\n` +
+        `- **Active Localhost TCP Ports (${(scan.openPorts || []).length} open / ${
+          scan.closedCount || 0
+        } closed)**:\n` +
+        `${openList || '- No listening ports detected'}\n\n` +
+        `All defensive countermeasures and Stark Firewalls are at maximum readiness, ${honorific}.`;
+
+      const speech = `Veronica Protocol engaged, ${honorific}. 維羅妮卡戰備防禦協定已啟動，已切換為浩克毀滅者戰鬥模式並完成本機連接埠資安掃描，目前開啟 ${
+        (scan.openPorts || []).length
+      } 個服務埠，網路延遲 ${scan.internetLatencyMs ?? 0} 毫秒。`;
+
+      this.appendMessage({
+        role: 'assistant',
+        sender: 'J.A.R.V.I.S. // VERONICA DEFENSE',
+        content: report,
+        speechText: speech,
+        badge: 'VERONICA LOCKDOWN // ACTIVE',
+        sources: scan.items || []
+      });
+      this.audio.speak(speech);
+    } catch {
+      const fallback = `Veronica Protocol engaged, ${honorific}. Combat HUD active.`;
+      this.appendMessage({
+        role: 'assistant',
+        sender: 'J.A.R.V.I.S. // VERONICA DEFENSE',
+        content: fallback,
+        speechText: fallback,
+        badge: 'VERONICA LOCKDOWN'
+      });
+    }
   }
 
   appendMessage({ role, sender, content, speechText, badge, sources = [], launchAction = null }) {

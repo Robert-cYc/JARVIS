@@ -2,6 +2,11 @@
  * Stark Industries Global Satellite Uplink — Web Surfing, Live News & Intelligence Skills
  */
 
+import {
+  runCyberSecurityScan,
+  evaluateQuantumSandbox
+} from './networkScannerService.js';
+
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
@@ -579,11 +584,161 @@ export async function generateMorningBriefing({
 }
 
 /**
- * Detects whether a user message requires live internet skills (news, web search, URL reading, weather, market, morning briefing)
+ * Fetches top stories from HackerNews (Silicon Valley Tech & Startup Intelligence).
+ * @param {number} [limit=6]
+ * @returns {Promise<{skill: string, items: Array<object>, summaryText: string}>}
+ */
+export async function fetchHackerNewsTop(limit = 6) {
+  try {
+    const res = await fetchWithTimeout('https://hnrss.org/frontpage', 5500);
+    if (!res.ok) throw new Error(`HN RSS HTTP ${res.status}`);
+    const xml = await res.text();
+    const rawItems = parseRssItems(xml, limit);
+    const items = rawItems.map((it) => ({
+      title: it.title,
+      link: it.link,
+      source: 'HackerNews (Y Combinator)',
+      pubDate: it.pubDate
+    }));
+    const lines = items.map((it, idx) => `${idx + 1}. ${it.title} (${it.link})`);
+    return {
+      skill: 'hackernews',
+      items,
+      summaryText:
+        items.length > 0
+          ? `[Silicon Valley HackerNews Top Stories]:\n${lines.join('\n')}`
+          : 'HackerNews feed temporarily unavailable.'
+    };
+  } catch (error) {
+    return {
+      skill: 'hackernews',
+      items: [],
+      summaryText: `HackerNews uplink error: ${error instanceof Error ? error.message : 'Failed'}`
+    };
+  }
+}
+
+/**
+ * Searches ArXiv for latest scientific / AI research papers.
+ * @param {string} [query='large language models']
+ * @param {number} [limit=5]
+ * @returns {Promise<{skill: string, query: string, items: Array<object>, summaryText: string}>}
+ */
+export async function searchArxivPapers(query = 'artificial intelligence', limit = 5) {
+  const cleanQuery = (query || 'artificial intelligence').trim();
+  try {
+    const url = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(
+      cleanQuery
+    )}&start=0&max_results=${limit}&sortBy=submittedDate&sortOrder=descending`;
+    const res = await fetchWithTimeout(url, 6500);
+    if (!res.ok) throw new Error(`ArXiv HTTP ${res.status}`);
+    const xml = await res.text();
+
+    const entries = [];
+    const entryRegex = /<entry>([\s\S]*?)<\/entry>/gi;
+    let match;
+    while ((match = entryRegex.exec(xml)) !== null && entries.length < limit) {
+      const block = match[1];
+      const titleMatch = block.match(/<title>([\s\S]*?)<\/title>/i);
+      const summaryMatch = block.match(/<summary>([\s\S]*?)<\/summary>/i);
+      const idMatch = block.match(/<id>([\s\S]*?)<\/id>/i);
+      const publishedMatch = block.match(/<published>([\s\S]*?)<\/published>/i);
+
+      const title = titleMatch
+        ? decodeHtmlEntities(titleMatch[1]).replace(/\s+/g, ' ').trim()
+        : 'Untitled ArXiv Paper';
+      const summary = summaryMatch
+        ? decodeHtmlEntities(summaryMatch[1]).replace(/\s+/g, ' ').trim().slice(0, 260)
+        : '';
+      const link = idMatch ? idMatch[1].trim() : 'https://arxiv.org';
+      const pubDate = publishedMatch ? publishedMatch[1].trim().slice(0, 10) : '';
+
+      entries.push({
+        title: `[ArXiv ${pubDate}] ${title}`,
+        link,
+        snippet: summary,
+        source: 'ArXiv R&D'
+      });
+    }
+
+    const lines = entries.map(
+      (e, i) => `${i + 1}. ${e.title}\n   Abstract: ${e.snippet}...\n   Link: ${e.link}`
+    );
+
+    return {
+      skill: 'arxiv_research',
+      query: cleanQuery,
+      items: entries,
+      summaryText:
+        entries.length > 0
+          ? `[Stark R&D ArXiv Scientific Papers for "${cleanQuery}"]:\n${lines.join('\n')}`
+          : `No ArXiv research papers found for "${cleanQuery}".`
+    };
+  } catch (error) {
+    return {
+      skill: 'arxiv_research',
+      query: cleanQuery,
+      items: [],
+      summaryText: `ArXiv sensor error: ${error instanceof Error ? error.message : 'Failed'}`
+    };
+  }
+}
+
+/**
+ * Searches GitHub repositories by topic or keyword, sorted by stars.
+ * @param {string} [query='ai agent']
+ * @param {number} [limit=5]
+ * @returns {Promise<{skill: string, query: string, items: Array<object>, summaryText: string}>}
+ */
+export async function searchGithubRepos(query = 'ai agent', limit = 5) {
+  const cleanQuery = (query || 'ai agent').trim();
+  try {
+    const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(
+      cleanQuery
+    )}&sort=stars&order=desc&per_page=${limit}`;
+    const res = await fetchWithTimeout(url, 6000);
+    if (!res.ok) throw new Error(`GitHub API HTTP ${res.status}`);
+    const data = await res.json();
+    const rawRepos = data.items || [];
+
+    const items = rawRepos.slice(0, limit).map((r) => ({
+      title: `${r.full_name} (⭐ ${Number(r.stargazers_count || 0).toLocaleString()} | ${
+        r.language || 'Code'
+      })`,
+      link: r.html_url,
+      snippet: r.description || 'No description provided.',
+      source: 'GitHub Open-Source'
+    }));
+
+    const lines = items.map(
+      (it, idx) => `${idx + 1}. ${it.title} — ${it.snippet} (${it.link})`
+    );
+
+    return {
+      skill: 'github_repos',
+      query: cleanQuery,
+      items,
+      summaryText:
+        items.length > 0
+          ? `[GitHub Top Open-Source Repositories for "${cleanQuery}"]:\n${lines.join('\n')}`
+          : `No GitHub repositories found for "${cleanQuery}".`
+    };
+  } catch (error) {
+    return {
+      skill: 'github_repos',
+      query: cleanQuery,
+      items: [],
+      summaryText: `GitHub API error: ${error instanceof Error ? error.message : 'Failed'}`
+    };
+  }
+}
+
+/**
+ * Detects whether a user message requires live internet skills (news, web search, URL reading, weather, market, morning briefing, cyber_scan, arxiv, github, hackernews, sandbox_calc)
  * and returns the detected intent and extracted query.
  * @param {string} userMessage
  * @param {boolean} [forceWebSearch=false]
- * @returns {{intent: 'none' | 'news' | 'url' | 'search' | 'weather' | 'market' | 'morning_briefing', query: string, edition?: string, url?: string}}
+ * @returns {{intent: 'none' | 'news' | 'url' | 'search' | 'weather' | 'market' | 'morning_briefing' | 'cyber_scan' | 'arxiv' | 'github' | 'hackernews' | 'sandbox_calc', query: string, edition?: string, url?: string}}
  */
 export function detectWebSkillIntent(userMessage, forceWebSearch = false) {
   if (!userMessage || typeof userMessage !== 'string') {
@@ -599,6 +754,55 @@ export function detectWebSkillIntent(userMessage, forceWebSearch = false) {
     )
   ) {
     return { intent: 'morning_briefing', query: text };
+  }
+
+  // 0.1 Check for Cyber-Security / Localhost Port & Network Latency Scan
+  if (
+    /(資安掃描|掃描.*(?:port|連接埠|埠)|port\s+scan|security\s+scan|network\s+scan|網路延遲|本機服務|veronica\s+protocol|維羅妮卡)/i.test(
+      text
+    )
+  ) {
+    return { intent: 'cyber_scan', query: text };
+  }
+
+  // 0.2 Check for Quantum Sandbox Math / Hash / Base64 / UUID
+  if (
+    /(?:\bsha256\b|\bmd5\b|\bbase64\b|\buuid\b|幫我算|計算一下|精確計算|calculate\s+|evaluate\s+)/i.test(
+      text
+    )
+  ) {
+    return { intent: 'sandbox_calc', query: text };
+  }
+
+  // 0.3 Check for ArXiv Research Papers
+  if (/(arxiv|論文|學術研究|research\s+papers?|scientific\s+papers?)/i.test(text)) {
+    const cleaned = text
+      .replace(
+        /(請|幫我|搜尋|查詢|找|最新|關於|的|論文|學術研究|arxiv|research\s+papers?|scientific\s+papers?|on|about|for|[，。！？?.,])/gi,
+        ' '
+      )
+      .trim();
+    return { intent: 'arxiv', query: cleaned || 'large language models' };
+  }
+
+  // 0.4 Check for HackerNews Top Stories
+  if (/(hacker\s*news|\bhn\b.*(?:top|stories|新聞)|矽谷新聞|駭客新聞)/i.test(text)) {
+    return { intent: 'hackernews', query: text };
+  }
+
+  // 0.5 Check for GitHub Repository Search (when not simply "open github")
+  if (
+    /(github\s*(?:專案|趨勢|熱門|repo|repositories|搜尋|トレンド)|開源專案|open\s*source\s+repos?)/i.test(
+      text
+    )
+  ) {
+    const cleaned = text
+      .replace(
+        /(請|幫我|在|搜尋|查詢|找|最新|熱門|關於|的|開源專案|專案|github|repositories|repos?|on|for|about|[，。！？?.,])/gi,
+        ' '
+      )
+      .trim();
+    return { intent: 'github', query: cleaned || 'ai agent' };
   }
 
   // 1. Check for explicit URL in message
@@ -695,6 +899,56 @@ export async function executeWebSkillForMessage(
     return {
       executed: true,
       skill: 'morning_briefing',
+      items: res.items || [],
+      contextBlock: res.summaryText
+    };
+  }
+
+  if (detected.intent === 'cyber_scan') {
+    const res = await runCyberSecurityScan();
+    return {
+      executed: true,
+      skill: 'cyber_security_scan',
+      items: res.items || [],
+      contextBlock: res.summaryText
+    };
+  }
+
+  if (detected.intent === 'sandbox_calc') {
+    const res = evaluateQuantumSandbox(detected.query);
+    return {
+      executed: true,
+      skill: 'quantum_sandbox',
+      items: res.items || [],
+      contextBlock: res.summaryText
+    };
+  }
+
+  if (detected.intent === 'arxiv') {
+    const res = await searchArxivPapers(detected.query || 'artificial intelligence', 5);
+    return {
+      executed: true,
+      skill: 'arxiv_research',
+      items: res.items || [],
+      contextBlock: res.summaryText
+    };
+  }
+
+  if (detected.intent === 'github') {
+    const res = await searchGithubRepos(detected.query || 'ai agent', 5);
+    return {
+      executed: true,
+      skill: 'github_repos',
+      items: res.items || [],
+      contextBlock: res.summaryText
+    };
+  }
+
+  if (detected.intent === 'hackernews') {
+    const res = await fetchHackerNewsTop(6);
+    return {
+      executed: true,
+      skill: 'hackernews',
       items: res.items || [],
       contextBlock: res.summaryText
     };

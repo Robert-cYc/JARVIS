@@ -74,6 +74,21 @@ describe('J.A.R.V.I.S. Web Skills & News Service', () => {
     const briefingIntent = detectWebSkillIntent('早安 JARVIS，請進行今日晨間簡報');
     assert.equal(briefingIntent.intent, 'morning_briefing');
 
+    const cyberIntent = detectWebSkillIntent('JARVIS，請執行本機連接埠與資安掃描');
+    assert.equal(cyberIntent.intent, 'cyber_scan');
+
+    const arxivIntent = detectWebSkillIntent('請幫我搜尋 ArXiv 最新關於 AI Agent 的論文');
+    assert.equal(arxivIntent.intent, 'arxiv');
+
+    const githubIntent = detectWebSkillIntent('請搜尋 GitHub 熱門開源專案');
+    assert.equal(githubIntent.intent, 'github');
+
+    const hnIntent = detectWebSkillIntent('請查詢今天 HackerNews 的科技頭條');
+    assert.equal(hnIntent.intent, 'hackernews');
+
+    const sandboxIntent = detectWebSkillIntent('幫我算 sha256: STARK');
+    assert.equal(sandboxIntent.intent, 'sandbox_calc');
+
     const forceSearch = detectWebSkillIntent('Hello JARVIS', true);
     assert.equal(forceSearch.intent, 'search');
   });

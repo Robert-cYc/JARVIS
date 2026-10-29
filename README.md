@@ -151,6 +151,14 @@ npm test
 | `GET` | `/api/models` | 取得已安裝的 Ollama 模型清單與雲端預設模型目錄 |
 | `POST` | `/api/ollama/pull` | 串流下載指定之 Ollama 本地模型（回傳 NDJSON 進度） |
 | `POST` | `/api/chat` | 傳送對話紀錄與人格參數，自動觸發聯網技能並取得 J.A.R.V.I.S. 回覆 |
+| `POST` | `/api/chat/stream` | NDJSON 即時打字機串流回覆與邊串流邊語音合成 |
 | `GET` | `/api/skills/news` | 取得今日即時新聞頭條（支援 `?edition=tw\|tech\|us&q=關鍵字`） |
 | `GET` | `/api/skills/search` | 執行即時網路搜尋（`?q=搜尋關鍵字`） |
 | `GET` | `/api/skills/browse` | 讀取並擷取指定網址之純文字內容（`?url=https://...`） |
+| `GET` | `/api/skills/weather` | 取得指定城市即時氣象與降雨機率（`?city=Taipei`） |
+| `GET` | `/api/skills/market` | 取得台積電、NVDA、BTC 與匯率即時報價 |
+| `GET` | `/api/skills/briefing` | 產生史塔克早安綜合簡報（天氣 + 股市 + 新聞 + 待辦事項） |
+| `GET` | `/api/skills/cyber-scan` | 執行本機 TCP Port 掃描與外部 DNS 延遲資安檢測 |
+| `POST` | `/api/skills/sandbox` | 史塔克量子沙盒：安全執行數學運算、SHA-256、Base64 與 UUID |
+| `GET` | `/api/skills/rnd` | 研發情報檢索（支援 `?type=arxiv\|github\|hn&q=關鍵字`） |
+| `GET/POST/DELETE` | `/api/vault*` | 長期記憶庫與待辦事項管理 |
