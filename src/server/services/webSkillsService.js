@@ -349,50 +349,60 @@ function describeWeatherCode(code) {
 
 /**
  * Fetches live weather telemetry using Open-Meteo (zero API key required).
+ * Supports single city (e.g. 'Kaohsiung' / '高雄') or multi-city (e.g. '高雄,台北').
  * @param {string} [cityQuery='Taipei']
  * @returns {Promise<{skill: string, city: string, data: object | null, items: Array<object>, summaryText: string}>}
  */
 export async function fetchWeatherTelemetry(cityQuery = 'Taipei') {
   const cleanCity = (cityQuery || 'Taipei').trim();
-  let lat = 25.033;
-  let lon = 121.5654;
-  let resolvedName = 'Taipei (台北)';
 
   const presetCities = {
     台北: { lat: 25.033, lon: 121.5654, name: 'Taipei (台北)' },
     臺北: { lat: 25.033, lon: 121.5654, name: 'Taipei (台北)' },
+    taipei: { lat: 25.033, lon: 121.5654, name: 'Taipei (台北)' },
     新北: { lat: 25.0169, lon: 121.4628, name: 'New Taipei (新北)' },
     桃園: { lat: 24.9936, lon: 121.301, name: 'Taoyuan (桃園)' },
     新竹: { lat: 24.8138, lon: 120.9675, name: 'Hsinchu (新竹)' },
     台中: { lat: 24.1477, lon: 120.6736, name: 'Taichung (台中)' },
     臺中: { lat: 24.1477, lon: 120.6736, name: 'Taichung (台中)' },
     台南: { lat: 22.9999, lon: 120.2269, name: 'Tainan (台南)' },
+    臺南: { lat: 22.9999, lon: 120.2269, name: 'Tainan (台南)' },
     高雄: { lat: 22.6273, lon: 120.3014, name: 'Kaohsiung (高雄)' },
+    kaohsiung: { lat: 22.6273, lon: 120.3014, name: 'Kaohsiung (高雄)' },
     東京: { lat: 35.6762, lon: 139.6503, name: 'Tokyo (東京)' },
     倫敦: { lat: 51.5074, lon: -0.1278, name: 'London (倫敦)' },
     紐約: { lat: 40.7128, lon: -74.006, name: 'New York (紐約)' }
   };
 
-  try {
-    const matchedPreset = Object.keys(presetCities).find((k) =>
-      cleanCity.includes(k)
-    );
-    if (matchedPreset) {
-      lat = presetCities[matchedPreset].lat;
-      lon = presetCities[matchedPreset].lon;
-      resolvedName = presetCities[matchedPreset].name;
-    } else if (!/taipei/i.test(cleanCity)) {
-      const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
-        cleanCity
-      )}&count=1&language=zh&format=json`;
-      const geoRes = await fetchWithTimeout(geoUrl, 4500);
-      if (geoRes.ok) {
-        const geoData = await geoRes.json();
-        const first = geoData.results?.[0];
-        if (first) {
-          lat = first.latitude;
-          lon = first.longitude;
-          resolvedName = `${first.name}${first.country ? `, ${first.country}` : ''}`;
+  // Check if multiple preset cities are requested (e.g. "高雄與台北" or "Taipei,Kaohsiung")
+  const matchedPresets = [];
+  const seenNames = new Set();
+  for (const [key, val] of Object.entries(presetCities)) {
+    if (cleanCity.toLowerCase().includes(key) && !seenNames.has(val.name)) {
+      seenNames.add(val.name);
+      matchedPresets.push(val);
+    }
+  }
+
+  const fetchSingleLocation = async (targetInfo) => {
+    let { lat, lon, name: resolvedName } = targetInfo;
+    if (!lat || !lon) {
+      lat = 25.033;
+      lon = 121.5654;
+      resolvedName = 'Taipei (台北)';
+      if (!/taipei/i.test(cleanCity)) {
+        const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
+          cleanCity
+        )}&count=1&language=zh&format=json`;
+        const geoRes = await fetchWithTimeout(geoUrl, 4500);
+        if (geoRes.ok) {
+          const geoData = await geoRes.json();
+          const first = geoData.results?.[0];
+          if (first) {
+            lat = first.latitude;
+            lon = first.longitude;
+            resolvedName = `${first.name}${first.country ? `, ${first.country}` : ''}`;
+          }
         }
       }
     }
@@ -417,7 +427,6 @@ export async function fetchWeatherTelemetry(cityQuery = 'Taipei') {
       `- Rain Probability: ${rainProb}% | Humidity: ${cur.relative_humidity_2m}% | Wind: ${cur.wind_speed_10m} km/h`;
 
     return {
-      skill: 'weather_telemetry',
       city: resolvedName,
       data: {
         city: resolvedName,
@@ -430,19 +439,31 @@ export async function fetchWeatherTelemetry(cityQuery = 'Taipei') {
         humidityPercent: cur.relative_humidity_2m,
         windKmh: cur.wind_speed_10m
       },
-      items: [
-        {
-          title: `${resolvedName}: ${cur.temperature_2m}°C (${condition}) | 降雨機率 ${rainProb}%`,
-          link: `https://www.windy.com/${lat}/${lon}?${lat},${lon},10`,
-          source: 'Open-Meteo Satellite'
-        }
-      ],
-      summaryText: summary
+      item: {
+        title: `${resolvedName}: ${cur.temperature_2m}°C (${condition}) | 高低溫 ${minT}~${maxT}°C | 降雨機率 ${rainProb}%`,
+        link: `https://www.windy.com/${lat}/${lon}?${lat},${lon},10`,
+        source: 'Open-Meteo Satellite'
+      },
+      summary
+    };
+  };
+
+  try {
+    const targets =
+      matchedPresets.length > 0 ? matchedPresets : [{ lat: null, lon: null, name: cleanCity }];
+    const results = await Promise.all(targets.map((t) => fetchSingleLocation(t)));
+
+    return {
+      skill: 'weather_telemetry',
+      city: results.map((r) => r.city).join(' & '),
+      data: results.length === 1 ? results[0].data : results.map((r) => r.data),
+      items: results.map((r) => r.item),
+      summaryText: results.map((r) => r.summary).join('\n\n')
     };
   } catch (error) {
     return {
       skill: 'weather_telemetry',
-      city: resolvedName,
+      city: cleanCity,
       data: null,
       items: [],
       summaryText: `Weather sensor error: ${error instanceof Error ? error.message : 'Failed'}`
@@ -451,17 +472,20 @@ export async function fetchWeatherTelemetry(cityQuery = 'Taipei') {
 }
 
 /**
- * Fetches live stock, crypto, and FX market quotes from Yahoo Finance v8 API.
+ * Fetches live Gold price trend (GC=F), stock, crypto, and FX market quotes from Yahoo Finance v8 API.
+ * Includes 5-day price rally/trend analysis and Taiwan Gold (NT$/oz & NT$/台錢) conversion.
  * @param {Array<string>} [symbols]
  * @returns {Promise<{skill: string, quotes: Array<object>, items: Array<object>, summaryText: string}>}
  */
 export async function fetchMarketTelemetry(
-  symbols = ['^TWII', '2330.TW', 'NVDA', 'AAPL', 'BTC-USD', 'TWD=X']
+  symbols = ['GC=F', '^TWII', '2330.TW', 'NVDA', 'AAPL', 'BTC-USD', 'TWD=X']
 ) {
   const quotes = [];
   const items = [];
 
   const labelMap = {
+    'GC=F': '🥇 國際黃金現貨/期貨 (Gold Spot USD/oz)',
+    'SI=F': '🥈 國際白銀期貨 (Silver USD/oz)',
     '^TWII': '台股加權指數 (TAIEX)',
     '2330.TW': '台積電 (TSMC 2330)',
     '2317.TW': '鴻海 (Foxconn 2317)',
@@ -480,18 +504,35 @@ export async function fetchMarketTelemetry(
       try {
         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
           sym
-        )}?interval=1d&range=2d`;
+        )}?interval=1d&range=5d`;
         const res = await fetchWithTimeout(url, 5000);
         if (!res.ok) return;
         const json = await res.json();
-        const meta = json.chart?.result?.[0]?.meta;
+        const resultObj = json.chart?.result?.[0];
+        const meta = resultObj?.meta;
         if (!meta || typeof meta.regularMarketPrice !== 'number') return;
 
         const price = meta.regularMarketPrice;
-        const prev = meta.chartPreviousClose || meta.previousClose || price;
+        const quotesArr = resultObj?.indicators?.quote?.[0] || {};
+        const closeList = (quotesArr.close || []).filter((v) => typeof v === 'number');
+        const highList = (quotesArr.high || []).filter((v) => typeof v === 'number');
+        const lowList = (quotesArr.low || []).filter((v) => typeof v === 'number');
+
+        const prev =
+          closeList.length >= 2
+            ? closeList[closeList.length - 2]
+            : meta.chartPreviousClose || meta.previousClose || price;
         const diff = price - prev;
         const pct = prev > 0 ? Number(((diff / prev) * 100).toFixed(2)) : 0;
         const sign = diff >= 0 ? '+' : '';
+
+        const first5d = closeList.length > 0 ? closeList[0] : prev;
+        const fiveDayPct =
+          first5d > 0 ? Number((((price - first5d) / first5d) * 100).toFixed(2)) : pct;
+        const fiveDaySign = fiveDayPct >= 0 ? '+' : '';
+        const fiveDayHigh = highList.length > 0 ? Math.max(...highList, price) : price;
+        const fiveDayLow = lowList.length > 0 ? Math.min(...lowList, price) : price;
+
         const name = labelMap[sym] || sym;
 
         quotes.push({
@@ -499,13 +540,21 @@ export async function fetchMarketTelemetry(
           name,
           price,
           currency: meta.currency || 'USD',
-          changePercent: pct
+          changePercent: pct,
+          fiveDayChangePercent: fiveDayPct,
+          fiveDayHigh: Number(fiveDayHigh.toFixed(2)),
+          fiveDayLow: Number(fiveDayLow.toFixed(2))
         });
 
+        const trendTag =
+          sym === 'GC=F'
+            ? ` | 5日漲勢 ${fiveDaySign}${fiveDayPct}% (區間 ${fiveDayLow.toFixed(0)}~${fiveDayHigh.toFixed(0)})`
+            : '';
+
         items.push({
-          title: `${name}: ${price.toLocaleString()} ${meta.currency || ''} (${sign}${pct}%)`,
+          title: `${name}: ${price.toLocaleString()} ${meta.currency || ''} (單日 ${sign}${pct}%${trendTag})`,
           link: `https://finance.yahoo.com/quote/${encodeURIComponent(sym)}`,
-          source: 'Market Telemetry'
+          source: sym === 'GC=F' ? 'Gold Bullion Telemetry' : 'Market Telemetry'
         });
       } catch {
         // Ignore single symbol error
@@ -513,11 +562,46 @@ export async function fetchMarketTelemetry(
     })
   );
 
+  // Calculate Taiwan Gold Reference Price (NT$ / oz and NT$ / 台錢) if GC=F is available
+  const goldQuote = quotes.find((q) => q.symbol === 'GC=F');
+  const fxQuote = quotes.find((q) => q.symbol === 'TWD=X');
+  const usdToTwd = fxQuote?.price || 32.5;
+  let goldDetailBlock = '';
+
+  if (goldQuote) {
+    const twdPerOz = Math.round(goldQuote.price * usdToTwd);
+    // 1 Troy Ounce (31.1034768g) = 8.29426 Taiwan Qian (台錢, 3.75g)
+    const twdPerQian = Math.round(twdPerOz / 8.29426);
+    const twdPerGram = Math.round(twdPerOz / 31.1035);
+    const trendArrow =
+      goldQuote.fiveDayChangePercent >= 0 ? '📈 多頭上攻 (Bullish Rally)' : '📉 回檔整理 (Pullback)';
+
+    goldDetailBlock =
+      `\n[🥇 黃金金價漲勢專區 (Gold Bullion & Taiwan Conversion)]:\n` +
+      `- 國際黃金價格 (GC=F): $${goldQuote.price.toLocaleString()} USD/oz (今日漲跌: ${
+        goldQuote.changePercent >= 0 ? '+' : ''
+      }${goldQuote.changePercent}% | 近5日累計漲勢: ${
+        goldQuote.fiveDayChangePercent >= 0 ? '+' : ''
+      }${goldQuote.fiveDayChangePercent}%)\n` +
+      `- 近5日金價高低區間: $${goldQuote.fiveDayLow.toLocaleString()} ~ $${goldQuote.fiveDayHigh.toLocaleString()} USD/oz (${trendArrow})\n` +
+      `- 台灣黃金換算參考價 (依匯率 ${usdToTwd}): 約 NT$${twdPerQian.toLocaleString()} / 台錢 | 約 NT$${twdPerGram.toLocaleString()} / 公克 | 約 NT$${twdPerOz.toLocaleString()} / 盎司`;
+
+    items.unshift({
+      title: `🥇 台灣黃金換算: 約 NT$${twdPerQian.toLocaleString()}/台錢 (國際金價 $${goldQuote.price.toLocaleString()} USD/oz, 5日漲勢 ${
+        goldQuote.fiveDayChangePercent >= 0 ? '+' : ''
+      }${goldQuote.fiveDayChangePercent}%)`,
+      link: 'https://rate.bot.com.tw/gold',
+      source: '台灣銀行黃金牌價 / Gold Telemetry'
+    });
+  }
+
   const lines = quotes.map(
     (q) =>
-      `- ${q.name} [${q.symbol}]: ${q.price} ${q.currency} (${
+      `- ${q.name} [${q.symbol}]: ${q.price} ${q.currency} (單日 ${
         q.changePercent >= 0 ? '+' : ''
-      }${q.changePercent}%)`
+      }${q.changePercent}% | 5日漲勢 ${q.fiveDayChangePercent >= 0 ? '+' : ''}${
+        q.fiveDayChangePercent
+      }%)`
   );
 
   return {
@@ -526,24 +610,24 @@ export async function fetchMarketTelemetry(
     items,
     summaryText:
       quotes.length > 0
-        ? `Live Global Market & FX Telemetry:\n${lines.join('\n')}`
+        ? `Live Global Market, Gold Bullion & FX Telemetry:\n${lines.join('\n')}${goldDetailBlock}`
         : 'Market telemetry feed temporarily unavailable.'
   };
 }
 
 /**
- * Generates a comprehensive Stark Morning Briefing (Weather + Markets + Taiwan & Tech News + Tasks).
+ * Generates a comprehensive Stark Morning Briefing (Taipei & Kaohsiung Weather + Gold & Markets + Taiwan & Tech News + Tasks).
  * @param {object} [options]
- * @param {string} [options.city='Taipei']
+ * @param {string} [options.city='台北,高雄']
  * @param {Array<object>} [options.pendingTasks=[]]
  */
 export async function generateMorningBriefing({
-  city = 'Taipei',
+  city = '台北,高雄',
   pendingTasks = []
 } = {}) {
   const [weather, markets, twNews, techNews] = await Promise.all([
     fetchWeatherTelemetry(city),
-    fetchMarketTelemetry(['^TWII', '2330.TW', 'NVDA', 'BTC-USD', 'TWD=X']),
+    fetchMarketTelemetry(['GC=F', '^TWII', '2330.TW', 'NVDA', 'BTC-USD', 'TWD=X']),
     fetchTodaysNews({ edition: 'tw', limit: 4 }),
     fetchTodaysNews({ edition: 'tech', limit: 3 })
   ]);
@@ -813,18 +897,19 @@ export function detectWebSkillIntent(userMessage, forceWebSearch = false) {
 
   // 2. Check for Weather Telemetry intent
   if (/(天氣|氣溫|降雨|下雨|帶傘|氣象|weather|temperature|forecast)/i.test(text)) {
-    const cityMatch = text.match(
-      /(台北|臺北|新北|桃園|新竹|台中|臺中|台南|高雄|東京|倫敦|紐約|Taipei|Tokyo|London|New York)/i
+    const cityMatches = text.match(
+      /(台北|臺北|新北|桃園|新竹|台中|臺中|台南|臺南|高雄|東京|倫敦|紐約|Taipei|Kaohsiung|Tokyo|London|New York)/gi
     );
+    const uniqueCities = cityMatches ? [...new Set(cityMatches)] : ['台北', '高雄'];
     return {
       intent: 'weather',
-      query: cityMatch ? cityMatch[1] : 'Taipei'
+      query: uniqueCities.join(',')
     };
   }
 
-  // 3. Check for Stock / Crypto / FX Market intent
+  // 3. Check for Gold / Stock / Crypto / FX Market intent
   if (
-    /(股價|股市|大盤|台積電|輝達|比特幣|以太幣|匯率|美金|台幣|\bNVDA\b|\bTSMC\b|\bAAPL\b|\bTSLA\b|\bBTC\b|\bETH\b|stock\s+price|crypto|exchange\s+rate)/i.test(
+    /(黃金|金價|貴金屬|白銀|股價|股市|大盤|台積電|輝達|比特幣|以太幣|匯率|美金|台幣|\bXAU\b|\bGC=F\b|\bNVDA\b|\bTSMC\b|\bAAPL\b|\bTSLA\b|\bBTC\b|\bETH\b|gold\s+price|stock\s+price|crypto|exchange\s+rate)/i.test(
       text
     )
   ) {
@@ -895,7 +980,7 @@ export async function executeWebSkillForMessage(
   }
 
   if (detected.intent === 'morning_briefing') {
-    const res = await generateMorningBriefing({ city: 'Taipei', pendingTasks });
+    const res = await generateMorningBriefing({ city: '台北,高雄', pendingTasks });
     return {
       executed: true,
       skill: 'morning_briefing',

@@ -990,11 +990,27 @@ class JarvisHudController {
           )
       },
       {
-        title: '🌅 Stark Morning Briefing (早安綜合簡報：天氣 + 股市 + 新聞 + 待辦)',
+        title: '🌅 Stark Morning Briefing (早安綜合簡報：高雄/台北天氣 + 黃金/股市 + 新聞 + 待辦)',
         tag: 'DAILY BRIEFING',
         action: () =>
           this.handleSendMessage(
-            '早安 JARVIS，請為我進行今日晨間綜合簡報（包含即時天氣、金融市場行情、台灣與科技頭條新聞以及我的待辦事項）。'
+            '早安 JARVIS，請為我進行今日晨間綜合簡報（包含高雄與台北即時天氣、黃金金價漲勢、台美股金融行情、台灣與科技頭條新聞以及我的待辦事項）。'
+          )
+      },
+      {
+        title: '🥇 Gold Price Rally & Taiwan Conversion (國際黃金金價漲勢與台灣每台錢換算)',
+        tag: 'GOLD BULLION',
+        action: () =>
+          this.handleSendMessage(
+            'JARVIS，請幫我查詢目前國際黃金金價 (GC=F) 的最新報價、近期 5 日漲勢表現與高低區間，並換算成台灣黃金每台錢與每盎司台幣參考價格。'
+          )
+      },
+      {
+        title: '☀️ Kaohsiung Live Weather & Forecast (高雄即時天氣、氣溫與降雨機率)',
+        tag: 'WEATHER',
+        action: () =>
+          this.handleSendMessage(
+            'JARVIS，請幫我查詢高雄今天的即時天氣、氣溫、體感溫度與降雨機率，出門需要帶傘或防曬嗎？'
           )
       },
       {
