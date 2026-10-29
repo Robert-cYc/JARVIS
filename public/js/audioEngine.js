@@ -343,6 +343,66 @@ export class JarvisAudioEngine {
   }
 
   /**
+   * Queues a single sentence chunk during live SSE streaming without cancelling active speech.
+   * @param {string} segmentText
+   */
+  enqueueSpeechSegment(segmentText) {
+    if (!this.voiceEnabled || !this.synth || !segmentText) return;
+    const clean = segmentText
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/[*#`_~]/g, '')
+      .trim();
+    if (!clean) return;
+
+    const voice = this.resolveBestVoice(clean);
+    const utterance = new SpeechSynthesisUtterance(clean);
+    if (voice) {
+      utterance.voice = voice;
+      utterance.lang = voice.lang;
+    }
+    utterance.pitch = this.pitch;
+    utterance.rate = this.rate;
+    utterance.volume = 1.0;
+
+    utterance.onboundary = () => {
+      this._pulseWordModulation();
+    };
+
+    utterance.onstart = () => {
+      this.isSpeaking = true;
+      this.speechEnergy = 0.65;
+      this._setVocalResonanceCarrier(true);
+      if (this.onSpeakingStateChange) {
+        this.onSpeakingStateChange(true);
+      }
+    };
+
+    utterance.onend = () => {
+      if (!this.synth.speaking && !this.synth.pending) {
+        this.isSpeaking = false;
+        this.speechEnergy = 0;
+        this._setVocalResonanceCarrier(false);
+        if (this.onSpeakingStateChange) {
+          this.onSpeakingStateChange(false);
+        }
+      }
+    };
+
+    utterance.onerror = () => {
+      if (!this.synth.speaking && !this.synth.pending) {
+        this.isSpeaking = false;
+        this.speechEnergy = 0;
+        this._setVocalResonanceCarrier(false);
+        if (this.onSpeakingStateChange) {
+          this.onSpeakingStateChange(false);
+        }
+      }
+    };
+
+    this.synth.speak(utterance);
+  }
+
+  /**
    * Returns current normalized vocal energy (0.0 to 1.0) for the Arc Reactor visualizer.
    */
   sampleEnergy() {

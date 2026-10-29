@@ -62,6 +62,11 @@ class JarvisHudController {
       arcOutputHeader: document.getElementById('arcOutputHeader'),
       hudClock: document.getElementById('hudClock'),
       bootAudioBtn: document.getElementById('bootAudioBtn'),
+      suitThemeSelect: document.getElementById('suitThemeSelect'),
+      wakeWordBtn: document.getElementById('wakeWordBtn'),
+      exportReportBtn: document.getElementById('exportReportBtn'),
+      networkIpText: document.getElementById('networkIpText'),
+      uptimeText: document.getElementById('uptimeText'),
 
       ollamaConnBadge: document.getElementById('ollamaConnBadge'),
       providerSelect: document.getElementById('providerSelect'),
@@ -163,16 +168,35 @@ class JarvisHudController {
       onResult: (transcript, isFinal) => {
         this.dom.userInput.value = transcript;
         if (isFinal && transcript.trim().length > 0) {
+          this.dom.userInput.value = '';
           this.handleSendMessage(transcript.trim());
+        }
+      },
+      onWakeWord: (commandText) => {
+        this.audio.playBootSequence();
+        if (commandText && commandText.trim().length > 0) {
+          this.handleSendMessage(commandText.trim());
+        } else {
+          const honorific = this.dom.honorificInput.value || 'Sir';
+          const ack =
+            this.dom.languageSelect.value === 'en-GB'
+              ? `At your service, ${honorific}.`
+              : `${honorific}，請吩咐。`;
+          this.audio.speak(ack);
+          this.dom.reactorStateBanner.textContent =
+            'WAKE WORD DETECTED // LISTENING FOR DIRECTIVE, SIR';
         }
       },
       onStateChange: (listening) => {
         if (listening) {
-          this.dom.micBtn.textContent = 'MIC: LISTENING';
+          this.dom.micBtn.textContent = this.speechInput.wakeWordMode
+            ? 'MIC: WAKE-ON'
+            : 'MIC: LISTENING';
           this.dom.micBtn.classList.add('amber');
           this.visualizer.setState('LISTENING');
-          this.dom.reactorStateBanner.textContent =
-            'AUDIO SENSORS ACTIVE // LISTENING TO SIR';
+          this.dom.reactorStateBanner.textContent = this.speechInput.wakeWordMode
+            ? 'HANDS-FREE WAKE MODE // SAY "JARVIS / 賈維斯"'
+            : 'AUDIO SENSORS ACTIVE // LISTENING TO SIR';
         } else {
           this.dom.micBtn.textContent = 'MIC: OFF';
           this.dom.micBtn.classList.remove('amber');
@@ -231,6 +255,10 @@ class JarvisHudController {
       if (cfg.persona) this.dom.personaSelect.value = cfg.persona;
       if (cfg.language) this.dom.languageSelect.value = cfg.language;
       if (cfg.honorific) this.dom.honorificInput.value = cfg.honorific;
+      if (cfg.suitTheme && this.dom.suitThemeSelect) {
+        this.dom.suitThemeSelect.value = cfg.suitTheme;
+        this.applySuitTheme(cfg.suitTheme);
+      }
       if (typeof cfg.pitch === 'number') {
         this.audio.pitch = cfg.pitch;
         this.dom.pitchSlider.value = String(cfg.pitch);
@@ -255,6 +283,7 @@ class JarvisHudController {
         persona: this.dom.personaSelect.value,
         language: this.dom.languageSelect.value,
         honorific: this.dom.honorificInput.value,
+        suitTheme: this.dom.suitThemeSelect?.value || 'mark85',
         pitch: this.audio.pitch,
         rate: this.audio.rate
       };
@@ -264,7 +293,47 @@ class JarvisHudController {
     }
   }
 
+  applySuitTheme(themeName) {
+    document.body.classList.remove(
+      'theme-hulkbuster',
+      'theme-stealth',
+      'theme-warmachine'
+    );
+    if (themeName && themeName !== 'mark85') {
+      document.body.classList.add(`theme-${themeName}`);
+    }
+    if (this.visualizer) {
+      this.visualizer.setTheme(themeName);
+    }
+  }
+
   _bindEvents() {
+    if (this.dom.suitThemeSelect) {
+      this.dom.suitThemeSelect.addEventListener('change', () => {
+        this.audio.playHudClick(1900);
+        this.applySuitTheme(this.dom.suitThemeSelect.value);
+        this._saveSettings();
+      });
+    }
+
+    if (this.dom.wakeWordBtn) {
+      this.dom.wakeWordBtn.addEventListener('click', () => {
+        this.audio.playHudClick(1750);
+        this.speechInput.setLanguage(this.dom.languageSelect.value);
+        const active = this.speechInput.setWakeWordMode(!this.speechInput.wakeWordMode);
+        this.dom.wakeWordBtn.textContent = active
+          ? '🎙️ WAKE WORD: ON'
+          : '🎙️ WAKE WORD: OFF';
+        this.dom.wakeWordBtn.classList.toggle('amber', active);
+      });
+    }
+
+    if (this.dom.exportReportBtn) {
+      this.dom.exportReportBtn.addEventListener('click', () => {
+        this.audio.playHudClick(2050);
+        this.handleExportMarkdownReport();
+      });
+    }
     this.dom.bootAudioBtn.addEventListener('click', () => {
       this.audio.playBootSequence();
       const honorific = this.dom.honorificInput.value || 'Sir';
@@ -546,6 +615,12 @@ class JarvisHudController {
     this.dom.cpuModelText.textContent = t.cpuModel;
     this.dom.hostnameText.textContent = t.hostname;
     this.dom.hostPlatformBadge.textContent = t.platform;
+    if (this.dom.networkIpText && t.networkIp) {
+      this.dom.networkIpText.textContent = t.networkIp;
+    }
+    if (this.dom.uptimeText && t.uptimeFormatted) {
+      this.dom.uptimeText.textContent = t.uptimeFormatted;
+    }
   }
 
   _updateProviderUiState() {
@@ -705,7 +780,116 @@ class JarvisHudController {
     }
   }
 
-  appendMessage({ role, sender, content, speechText, badge, sources = [] }) {
+  /**
+   * Renders markdown code blocks with a holographic header & [COPY CODE] button, plus inline code.
+   * @param {HTMLElement} container
+   * @param {string} rawText
+   */
+  _renderRichBody(container, rawText) {
+    container.innerHTML = '';
+    if (!rawText) return;
+
+    const parts = rawText.split(/(```[\s\S]*?```)/g);
+    for (const part of parts) {
+      if (part.startsWith('```') && part.endsWith('```')) {
+        const inner = part.slice(3, -3);
+        const firstNewline = inner.indexOf('\n');
+        const lang =
+          firstNewline !== -1
+            ? inner.slice(0, firstNewline).trim() || 'CODE'
+            : 'CODE';
+        const codeContent =
+          firstNewline !== -1 ? inner.slice(firstNewline + 1) : inner;
+
+        const block = document.createElement('div');
+        block.className = 'hud-code-block';
+
+        const header = document.createElement('div');
+        header.className = 'hud-code-header';
+
+        const langSpan = document.createElement('span');
+        langSpan.textContent = `// ${lang.toUpperCase()}`;
+
+        const copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'hud-copy-btn';
+        copyBtn.textContent = '[COPY CODE]';
+        copyBtn.addEventListener('click', () => {
+          this.audio.playHudClick(2100);
+          navigator.clipboard?.writeText(codeContent).then(() => {
+            copyBtn.textContent = '[COPIED ✓]';
+            setTimeout(() => {
+              copyBtn.textContent = '[COPY CODE]';
+            }, 1800);
+          });
+        });
+
+        header.appendChild(langSpan);
+        header.appendChild(copyBtn);
+
+        const pre = document.createElement('pre');
+        pre.className = 'hud-code-pre';
+        pre.textContent = codeContent;
+
+        block.appendChild(header);
+        block.appendChild(pre);
+        container.appendChild(block);
+      } else if (part) {
+        const inlineParts = part.split(/(`[^`\n]+`)/g);
+        for (const ip of inlineParts) {
+          if (ip.startsWith('`') && ip.endsWith('`') && ip.length > 2) {
+            const codeEl = document.createElement('code');
+            codeEl.className = 'hud-inline-code';
+            codeEl.textContent = ip.slice(1, -1);
+            container.appendChild(codeEl);
+          } else if (ip) {
+            container.appendChild(document.createTextNode(ip));
+          }
+        }
+      }
+    }
+  }
+
+  handleExportMarkdownReport() {
+    const lines = [
+      `# J.A.R.V.I.S. // MARK LXXXV TACTICAL COMMUNICATIONS REPORT`,
+      `- **Generated At**: ${new Date().toLocaleString('zh-TW')}`,
+      `- **Active Neural Provider**: ${this.dom.providerSelect.value.toUpperCase()}`,
+      `---`,
+      ``
+    ];
+
+    if (this.conversationHistory.length === 0) {
+      lines.push('_No recorded transmissions in current session._');
+    } else {
+      for (const msg of this.conversationHistory) {
+        const speaker =
+          msg.role === 'user'
+            ? `### 👤 ${this.dom.honorificInput.value || 'Sir'}`
+            : `### 🤖 J.A.R.V.I.S.`;
+        lines.push(speaker);
+        lines.push('');
+        lines.push(msg.content);
+        lines.push('');
+        lines.push('---');
+        lines.push('');
+      }
+    }
+
+    const blob = new Blob([lines.join('\n')], {
+      type: 'text/markdown;charset=utf-8'
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `JARVIS_Tactical_Report_${new Date().toISOString().slice(0, 10)}.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  appendMessage({ role, sender, content, speechText, badge, sources = [], launchAction = null }) {
     const card = document.createElement('div');
     card.className = `msg-card ${role === 'user' ? 'user' : 'jarvis'}`;
 
@@ -724,12 +908,21 @@ class JarvisHudController {
 
     const body = document.createElement('div');
     body.className = 'msg-body';
-    body.textContent = content;
+    this._renderRichBody(body, content);
 
     card.appendChild(meta);
     card.appendChild(body);
 
-    if (Array.isArray(sources) && sources.length > 0) {
+    const allLinks = [...(Array.isArray(sources) ? sources : [])];
+    if (launchAction && launchAction.url) {
+      allLinks.unshift({
+        title: `🚀 LAUNCH TARGET: ${launchAction.label}`,
+        link: launchAction.url,
+        source: 'SYSTEM LAUNCHER'
+      });
+    }
+
+    if (allLinks.length > 0) {
       const sourcesBox = document.createElement('div');
       sourcesBox.className = 'msg-sources';
 
@@ -738,7 +931,7 @@ class JarvisHudController {
       titleEl.textContent = 'SATELLITE WEB UPLINK // VERIFIED SOURCES & LIVE LINKS';
       sourcesBox.appendChild(titleEl);
 
-      sources.slice(0, 6).forEach((item) => {
+      allLinks.slice(0, 6).forEach((item) => {
         if (!item.link) return;
         const linkEl = document.createElement('a');
         linkEl.className = 'source-link-card';
@@ -780,6 +973,7 @@ class JarvisHudController {
 
     this.dom.commsConsole.appendChild(card);
     this.dom.commsConsole.scrollTop = this.dom.commsConsole.scrollHeight;
+    return { card, body, badgeEl };
   }
 
   startTacticalTimer(durationSeconds) {
@@ -1063,6 +1257,7 @@ class JarvisHudController {
     const imageToSend = this.pendingImageDataUrl;
     this.clearPendingPayload();
 
+    this.audio.stopSpeaking();
     this.audio.playTelemetryChirp();
 
     let displayUserText = userText;
@@ -1086,8 +1281,21 @@ class JarvisHudController {
     this.dom.reactorStateBanner.textContent = `NEURAL & SATELLITE SYNTHESIS // ${chosenModel.toUpperCase()}`;
     this.dom.sendBtn.disabled = true;
 
+    // Create live streaming message card
+    const streamCard = this.appendMessage({
+      role: 'assistant',
+      sender: 'J.A.R.V.I.S.',
+      content: '...',
+      speechText: '',
+      badge: `SYNTHESIZING // ${chosenModel}`
+    });
+
+    let accumulatedText = '';
+    let unspokenBuffer = '';
+    let finalDoneEvent = null;
+
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1106,37 +1314,97 @@ class JarvisHudController {
         })
       });
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || `HTTP ${response.status}`);
+      if (!response.ok || !response.body) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `HTTP ${response.status}`);
       }
 
-      this.dom.lastLatencyText.textContent = `${data.latencyMs || 0} ms`;
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-      if (data.vaultActionExecuted) {
-        this.refreshVault();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          let evt;
+          try {
+            evt = JSON.parse(line);
+          } catch {
+            continue;
+          }
+
+          if (evt.type === 'meta') {
+            if (evt.vaultActionExecuted) {
+              this.refreshVault();
+            }
+            if (evt.launchAction && evt.launchAction.url) {
+              window.open(evt.launchAction.url, '_blank', 'noopener,noreferrer');
+            }
+          } else if (evt.type === 'delta' && evt.text) {
+            accumulatedText += evt.text;
+            unspokenBuffer += evt.text;
+            streamCard.body.textContent = accumulatedText;
+            this.dom.commsConsole.scrollTop = this.dom.commsConsole.scrollHeight;
+
+            // Live sentence-by-sentence TTS as soon as a sentence boundary completes
+            const sentenceMatch = unspokenBuffer.match(
+              /^([\s\S]*?[.!?。！？\n]+)\s+([\s\S]*)$/
+            );
+            if (sentenceMatch) {
+              const readySentence = sentenceMatch[1].trim();
+              unspokenBuffer = sentenceMatch[2];
+              if (readySentence.length > 2) {
+                this.audio.enqueueSpeechSegment(readySentence);
+              }
+            }
+          } else if (evt.type === 'done') {
+            finalDoneEvent = evt;
+          }
+        }
       }
+
+      // Speak remaining unspoken buffer
+      if (unspokenBuffer.trim().length > 0) {
+        this.audio.enqueueSpeechSegment(unspokenBuffer.trim());
+      }
+
+      const finalReply = finalDoneEvent?.reply || accumulatedText.trim();
+      const latencyMs = finalDoneEvent?.latencyMs || 0;
+      const webSkill = finalDoneEvent?.webSkill;
+      const launchAction = finalDoneEvent?.launchAction;
+
+      this.dom.lastLatencyText.textContent = `${latencyMs} ms`;
 
       this.conversationHistory.push({
         role: 'assistant',
-        content: data.reply
+        content: finalReply
       });
 
-      const skillBadge = data.webSkill?.executed
-        ? ` // UPLINK: ${data.webSkill.skill.toUpperCase()}`
+      const skillBadge = webSkill?.executed
+        ? ` // UPLINK: ${webSkill.skill.toUpperCase()}`
         : '';
 
+      // Replace temporary streaming card with final rich card (code blocks, copy buttons, source links, replay voice)
+      streamCard.card.remove();
       this.appendMessage({
         role: 'assistant',
         sender: 'J.A.R.V.I.S.',
-        content: data.reply,
-        speechText: data.speechText || data.reply,
-        badge: `${data.provider.toUpperCase()} // ${data.model}${skillBadge} // ${data.latencyMs}ms`,
-        sources: data.webSkill?.items || []
+        content: finalReply,
+        speechText: finalDoneEvent?.speechText || finalReply,
+        badge: `${(finalDoneEvent?.provider || provider).toUpperCase()} // ${
+          finalDoneEvent?.model || chosenModel
+        }${skillBadge} // ${latencyMs}ms`,
+        sources: webSkill?.items || [],
+        launchAction
       });
-
-      this.audio.speak(data.speechText || data.reply);
     } catch (error) {
+      streamCard.card.remove();
       const errMsg =
         error instanceof Error ? error.message : 'Telemetry link interrupted';
       this.appendMessage({

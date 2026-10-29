@@ -4,7 +4,8 @@ import {
   decodeHtmlEntities,
   extractReadableTextFromHtml,
   parseRssItems,
-  detectWebSkillIntent
+  detectWebSkillIntent,
+  detectLauncherCommand
 } from '../src/server/services/webSkillsService.js';
 
 describe('J.A.R.V.I.S. Web Skills & News Service', () => {
@@ -75,5 +76,16 @@ describe('J.A.R.V.I.S. Web Skills & News Service', () => {
 
     const forceSearch = detectWebSkillIntent('Hello JARVIS', true);
     assert.equal(forceSearch.intent, 'search');
+  });
+
+  it('detects workshop web/app launcher commands accurately', () => {
+    const ytCmd = detectLauncherCommand('JARVIS，請在 YouTube 搜尋 Iron Man AC/DC');
+    assert.ok(ytCmd);
+    assert.equal(ytCmd.executed, true);
+    assert.ok(ytCmd.url.includes('youtube.com/results?search_query='));
+
+    const ghCmd = detectLauncherCommand('幫我打開 GitHub');
+    assert.ok(ghCmd);
+    assert.equal(ghCmd.url, 'https://github.com');
   });
 });

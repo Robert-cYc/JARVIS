@@ -6,6 +6,7 @@ import { getSystemTelemetry } from './services/telemetryService.js';
 import {
   getOllamaStatus,
   generateJarvisResponse,
+  streamJarvisResponse,
   PERSONA_MODES
 } from './services/llmService.js';
 import {
@@ -279,6 +280,30 @@ export function createServer() {
         const id = parsedUrl.searchParams.get('id') || '';
         const state = await deleteTask(id);
         sendJson(res, 200, state);
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/chat/stream') {
+        req.socket.setTimeout(0);
+        res.setTimeout(0);
+
+        const body = await readJsonBody(req);
+        if (!Array.isArray(body.messages) || body.messages.length === 0) {
+          sendJson(res, 400, { error: 'No transmission payload detected, Sir.' });
+          return;
+        }
+
+        res.writeHead(200, {
+          'Content-Type': 'application/x-ndjson; charset=utf-8',
+          'Transfer-Encoding': 'chunked',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive'
+        });
+
+        await streamJarvisResponse(body, (eventObj) => {
+          res.write(`${JSON.stringify(eventObj)}\n`);
+        });
+        res.end();
         return;
       }
 

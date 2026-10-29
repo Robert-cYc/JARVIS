@@ -11,6 +11,7 @@ export class ArcReactorVisualizer {
     this.ctx = canvas.getContext('2d');
     this.getEnergy = getEnergyCallback;
     this.state = 'IDLE'; // IDLE | THINKING | SPEAKING | LISTENING
+    this.theme = 'mark85';
     this.angle1 = 0;
     this.angle2 = 0;
     this.angle3 = 0;
@@ -19,6 +20,10 @@ export class ArcReactorVisualizer {
 
   setState(newState) {
     this.state = newState;
+  }
+
+  setTheme(themeName) {
+    this.theme = themeName || 'mark85';
   }
 
   start() {
@@ -36,27 +41,55 @@ export class ArcReactorVisualizer {
   }
 
   _getPalette() {
+    if (this.state === 'SPEAKING') {
+      return {
+        primary: '#ffaa00',
+        secondary: '#00f0ff',
+        glow: 'rgba(255, 170, 0, 0.55)',
+        core: '#fff3d1'
+      };
+    }
+    if (this.state === 'LISTENING') {
+      return {
+        primary: '#00ff9d',
+        secondary: '#00f0ff',
+        glow: 'rgba(0, 255, 157, 0.55)',
+        core: '#d8fff0'
+      };
+    }
+
+    if (this.theme === 'hulkbuster') {
+      return {
+        primary: '#ff3b30',
+        secondary: '#ffcc00',
+        glow: 'rgba(255, 59, 48, 0.5)',
+        core: '#ffe5e0'
+      };
+    }
+    if (this.theme === 'stealth') {
+      return {
+        primary: '#00ff88',
+        secondary: '#00b894',
+        glow: 'rgba(0, 255, 136, 0.45)',
+        core: '#dcfff0'
+      };
+    }
+    if (this.theme === 'warmachine') {
+      return {
+        primary: '#d0e4ff',
+        secondary: '#4da6ff',
+        glow: 'rgba(160, 205, 255, 0.48)',
+        core: '#ffffff'
+      };
+    }
+
     switch (this.state) {
-      case 'SPEAKING':
-        return {
-          primary: '#ffaa00',
-          secondary: '#00f0ff',
-          glow: 'rgba(255, 170, 0, 0.55)',
-          core: '#fff3d1'
-        };
       case 'THINKING':
         return {
           primary: '#00f0ff',
           secondary: '#ffaa00',
           glow: 'rgba(0, 240, 255, 0.65)',
           core: '#e0ffff'
-        };
-      case 'LISTENING':
-        return {
-          primary: '#00ff9d',
-          secondary: '#00f0ff',
-          glow: 'rgba(0, 255, 157, 0.55)',
-          core: '#d8fff0'
         };
       default:
         return {

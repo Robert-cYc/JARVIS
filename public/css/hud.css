@@ -16,6 +16,48 @@
   --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
 }
 
+body.theme-hulkbuster {
+  --bg-deep: #0d0303;
+  --bg-panel: rgba(34, 8, 8, 0.8);
+  --bg-panel-accent: rgba(72, 16, 12, 0.48);
+  --cyan: #ff3b30;
+  --cyan-dim: rgba(255, 59, 48, 0.32);
+  --cyan-glow: rgba(255, 59, 48, 0.6);
+  --blue: #ff9500;
+  --amber: #ffcc00;
+  --amber-dim: rgba(255, 204, 0, 0.35);
+  --text-main: #ffece8;
+  --text-muted: #c48078;
+}
+
+body.theme-stealth {
+  --bg-deep: #020a06;
+  --bg-panel: rgba(4, 26, 16, 0.8);
+  --bg-panel-accent: rgba(0, 56, 32, 0.45);
+  --cyan: #00ff88;
+  --cyan-dim: rgba(0, 255, 136, 0.28);
+  --cyan-glow: rgba(0, 255, 136, 0.55);
+  --blue: #00b894;
+  --amber: #00f0ff;
+  --amber-dim: rgba(0, 240, 255, 0.3);
+  --text-main: #dcfff0;
+  --text-muted: #66b28f;
+}
+
+body.theme-warmachine {
+  --bg-deep: #06080c;
+  --bg-panel: rgba(18, 24, 34, 0.82);
+  --bg-panel-accent: rgba(38, 50, 70, 0.48);
+  --cyan: #d0e4ff;
+  --cyan-dim: rgba(208, 228, 255, 0.3);
+  --cyan-glow: rgba(208, 228, 255, 0.55);
+  --blue: #4da6ff;
+  --amber: #ff5555;
+  --amber-dim: rgba(255, 85, 85, 0.32);
+  --text-main: #f0f6ff;
+  --text-muted: #8fa3bf;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -452,6 +494,58 @@ body::after {
   color: var(--text-main);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.hud-code-block {
+  margin: 8px 0;
+  border: 1px solid var(--cyan-dim);
+  background: rgba(0, 10, 22, 0.9);
+  overflow: hidden;
+}
+
+.hud-code-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 10px;
+  background: rgba(0, 240, 255, 0.12);
+  border-bottom: 1px solid var(--cyan-dim);
+  font-family: var(--font-display);
+  font-size: 0.65rem;
+  color: var(--cyan);
+  letter-spacing: 1px;
+}
+
+.hud-copy-btn {
+  background: rgba(0, 240, 255, 0.15);
+  border: 1px solid var(--cyan);
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  padding: 2px 7px;
+  cursor: pointer;
+}
+
+.hud-copy-btn:hover {
+  background: rgba(0, 240, 255, 0.35);
+}
+
+.hud-code-pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: #e6fbff;
+}
+
+.hud-inline-code {
+  background: rgba(0, 240, 255, 0.14);
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  padding: 1px 5px;
+  font-size: 0.82rem;
+  color: var(--amber);
 }
 
 .msg-actions {

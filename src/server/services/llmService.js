@@ -1,4 +1,7 @@
-import { executeWebSkillForMessage } from './webSkillsService.js';
+import {
+  executeWebSkillForMessage,
+  detectLauncherCommand
+} from './webSkillsService.js';
 import {
   getVaultState,
   addMemory,
@@ -6,6 +9,7 @@ import {
   detectVaultCommand,
   formatVaultContextForPrompt
 } from './memoryVaultService.js';
+import { getSystemTelemetry } from './telemetryService.js';
 
 const DEFAULT_OLLAMA_URL = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
 
@@ -231,13 +235,24 @@ export async function generateJarvisResponse({
 
   const vaultState = await getVaultState();
   const vaultContext = formatVaultContextForPrompt(vaultState);
-  const systemPrompt = vaultContext
-    ? `${baseSystemPrompt}\n\n${vaultContext}`
-    : baseSystemPrompt;
+  const hw = getSystemTelemetry();
+  const hwContext =
+    `[REAL-TIME HOST HARDWARE TELEMETRY]:\n` +
+    `- Hostname: ${hw.hostname} | OS: ${hw.platform} (${hw.osRelease}) | IPv4: ${hw.networkIp}\n` +
+    `- CPU: ${hw.cpuModel} (${hw.cpuCores} Logical Cores, Current Load: ${hw.cpuUsagePercent}%)\n` +
+    `- Memory: ${hw.memoryUsedGb} GB used / ${hw.memoryTotalGb} GB total (${hw.memoryUsagePercent}% used, ${hw.memoryFreeGb} GB free)\n` +
+    `- System Uptime: ${hw.uptimeFormatted} | Mark LXXXV Arc Reactor Output: ${hw.arcReactorOutputPercent}%`;
+
+  const systemPrompt = [baseSystemPrompt, hwContext, vaultContext]
+    .filter(Boolean)
+    .join('\n\n');
+
+  // Check for Workshop App/Web Launcher Command
+  const launchAction = detectLauncherCommand(lastUserMessage);
 
   // 2. Execute live Web / Weather / Market / Morning Briefing skills if applicable
   let webSkillResult = { executed: false, skill: 'none', items: [], contextBlock: '' };
-  if (webSearchEnabled) {
+  if (webSearchEnabled && !launchAction) {
     const pendingTasks = (vaultState.tasks || []).filter((t) => !t.completed);
     webSkillResult = await executeWebSkillForMessage(lastUserMessage, {
       forceWebSearch,
@@ -250,6 +265,10 @@ export async function generateJarvisResponse({
 
   if (lastIdx >= 0 && enrichedHistory[lastIdx].role === 'user') {
     let extraContext = '';
+
+    if (launchAction) {
+      extraContext += `\n[SYSTEM CONFIRMATION: Opening "${launchAction.label}" (${launchAction.url}) on the user's HUD display now. Confirm this action briefly and politely in J.A.R.V.I.S.'s voice.]\n`;
+    }
 
     if (vaultActionExecuted) {
       extraContext += `\n[SYSTEM CONFIRMATION: Successfully saved ${vaultActionExecuted.type} ("${
@@ -477,6 +496,7 @@ export async function generateJarvisResponse({
       latencyMs: Date.now() - startTime,
       fallbackUsed: false,
       vaultActionExecuted,
+      launchAction,
       webSkill: {
         executed: webSkillResult.executed,
         skill: webSkillResult.skill,
@@ -501,11 +521,255 @@ export async function generateJarvisResponse({
       fallbackUsed: true,
       diagnosticError: reason,
       vaultActionExecuted,
+      launchAction,
       webSkill: {
         executed: webSkillResult.executed,
         skill: webSkillResult.skill,
         items: webSkillResult.items
       }
     };
+  }
+}
+
+/**
+ * Streams a chat completion response chunk-by-chunk via NDJSON callback for real-time HUD typing and live sentence TTS.
+ * @param {object} params
+ * @param {(event: object) => void} sendEvent
+ */
+export async function streamJarvisResponse(params, sendEvent) {
+  const {
+    provider = 'ollama',
+    model = 'llama3.2',
+    messages = [],
+    personaMode = 'butler',
+    language = 'auto',
+    honorific = 'Sir',
+    apiKey = '',
+    baseUrl = '',
+    webSearchEnabled = true,
+    forceWebSearch = false,
+    attachment = null,
+    imageDataUrl = ''
+  } = params;
+
+  const startTime = Date.now();
+  const normalizedModel = String(model || 'llama3.2').replace(/\s+/g, '');
+
+  // If provider is not ollama, or if we want unified fallback, we can stream Ollama directly and fallback cleanly
+  if (provider !== 'ollama') {
+    const res = await generateJarvisResponse(params);
+    sendEvent({
+      type: 'meta',
+      provider: res.provider,
+      model: res.model,
+      webSkill: res.webSkill,
+      vaultActionExecuted: res.vaultActionExecuted,
+      launchAction: res.launchAction
+    });
+    sendEvent({ type: 'delta', text: res.reply });
+    sendEvent({
+      type: 'done',
+      reply: res.reply,
+      speechText: res.speechText,
+      provider: res.provider,
+      model: res.model,
+      latencyMs: res.latencyMs,
+      webSkill: res.webSkill,
+      vaultActionExecuted: res.vaultActionExecuted,
+      launchAction: res.launchAction
+    });
+    return;
+  }
+
+  const baseSystemPrompt = buildJarvisSystemPrompt({ personaMode, language, honorific });
+  const normalizedHistory = Array.isArray(messages)
+    ? messages
+        .filter((m) => m && typeof m.content === 'string' && m.content.trim().length > 0)
+        .slice(-16)
+    : [];
+  const lastUserMessage =
+    normalizedHistory.filter((m) => m.role === 'user').pop()?.content || 'Status report';
+
+  let vaultActionExecuted = null;
+  const vaultCmd = detectVaultCommand(lastUserMessage);
+  if (vaultCmd.action === 'add_memory') {
+    const item = await addMemory(vaultCmd.payload);
+    vaultActionExecuted = { type: 'memory', item };
+  } else if (vaultCmd.action === 'add_task') {
+    const task = await addTask(vaultCmd.payload);
+    vaultActionExecuted = { type: 'task', item: task };
+  }
+
+  const vaultState = await getVaultState();
+  const vaultContext = formatVaultContextForPrompt(vaultState);
+  const hw = getSystemTelemetry();
+  const hwContext =
+    `[REAL-TIME HOST HARDWARE TELEMETRY]:\n` +
+    `- Hostname: ${hw.hostname} | OS: ${hw.platform} (${hw.osRelease}) | IPv4: ${hw.networkIp}\n` +
+    `- CPU: ${hw.cpuModel} (${hw.cpuCores} Logical Cores, Current Load: ${hw.cpuUsagePercent}%)\n` +
+    `- Memory: ${hw.memoryUsedGb} GB used / ${hw.memoryTotalGb} GB total (${hw.memoryUsagePercent}% used)\n` +
+    `- Uptime: ${hw.uptimeFormatted} | Arc Reactor Output: ${hw.arcReactorOutputPercent}%`;
+
+  const systemPrompt = [baseSystemPrompt, hwContext, vaultContext]
+    .filter(Boolean)
+    .join('\n\n');
+
+  const launchAction = detectLauncherCommand(lastUserMessage);
+
+  let webSkillResult = { executed: false, skill: 'none', items: [], contextBlock: '' };
+  if (webSearchEnabled && !launchAction) {
+    const pendingTasks = (vaultState.tasks || []).filter((t) => !t.completed);
+    webSkillResult = await executeWebSkillForMessage(lastUserMessage, {
+      forceWebSearch,
+      pendingTasks
+    });
+  }
+
+  // Emit metadata immediately so HUD shows satellite uplink / launcher / vault status before tokens arrive
+  sendEvent({
+    type: 'meta',
+    provider,
+    model: normalizedModel,
+    webSkill: {
+      executed: webSkillResult.executed,
+      skill: webSkillResult.skill,
+      items: webSkillResult.items
+    },
+    vaultActionExecuted,
+    launchAction
+  });
+
+  const enrichedHistory = [...normalizedHistory];
+  const lastIdx = enrichedHistory.length - 1;
+  if (lastIdx >= 0 && enrichedHistory[lastIdx].role === 'user') {
+    let extraContext = '';
+    if (launchAction) {
+      extraContext += `\n[SYSTEM CONFIRMATION: Opening "${launchAction.label}" (${launchAction.url}) on the user's HUD display now. Confirm this action briefly and politely in J.A.R.V.I.S.'s voice.]\n`;
+    }
+    if (vaultActionExecuted) {
+      extraContext += `\n[SYSTEM CONFIRMATION: Successfully saved ${vaultActionExecuted.type} ("${
+        vaultActionExecuted.item.content || vaultActionExecuted.item.title
+      }") into the Stark Persistent Vault. Acknowledge this politely.]\n`;
+    }
+    if (attachment && attachment.content) {
+      extraContext +=
+        `\n[ATTACHED FILE FOR ANALYSIS: "${attachment.name || 'document'}"]\n` +
+        `\`\`\`\n${String(attachment.content).slice(0, 12000)}\n\`\`\`\n` +
+        `[INSTRUCTION: Analyze the attached file above thoroughly.]\n`;
+    }
+    if (webSkillResult.executed && webSkillResult.contextBlock) {
+      extraContext +=
+        `\n[STARK SATELLITE LIVE INTERNET UPLINK DATA (${new Date().toISOString()})]:\n` +
+        `${webSkillResult.contextBlock}\n` +
+        `[INSTRUCTION: Use the live internet/news/weather/market data above to accurately answer the user's request in J.A.R.V.I.S.'s persona.]\n`;
+    }
+    if (extraContext) {
+      enrichedHistory[lastIdx] = {
+        ...enrichedHistory[lastIdx],
+        content: `${enrichedHistory[lastIdx].content}\n${extraContext}`
+      };
+    }
+  }
+
+  let base64ImageRaw = '';
+  if (imageDataUrl && typeof imageDataUrl === 'string' && imageDataUrl.startsWith('data:image/')) {
+    const match = imageDataUrl.match(/^data:image\/[a-zA-Z0-9+.-]+;base64,(.+)$/);
+    if (match) base64ImageRaw = match[1];
+  }
+
+  try {
+    const ollamaUrl = (baseUrl || DEFAULT_OLLAMA_URL).replace(/\/+$/, '');
+    const ollamaMessages = enrichedHistory.map((m, idx) => {
+      if (idx === enrichedHistory.length - 1 && m.role === 'user' && base64ImageRaw) {
+        return { role: m.role, content: m.content, images: [base64ImageRaw] };
+      }
+      return { role: m.role, content: m.content };
+    });
+
+    const response = await fetch(`${ollamaUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: normalizedModel,
+        stream: true,
+        messages: [{ role: 'system', content: systemPrompt }, ...ollamaMessages]
+      })
+    });
+
+    if (!response.ok || !response.body) {
+      const errBody = await response.text();
+      throw new Error(`Ollama (${normalizedModel}): ${errBody || response.statusText}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullReply = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const evt = JSON.parse(line);
+          const token = evt.message?.content || '';
+          if (token) {
+            fullReply += token;
+            sendEvent({ type: 'delta', text: token });
+          }
+        } catch {
+          // Ignore partial JSON lines
+        }
+      }
+    }
+
+    if (!fullReply.trim()) {
+      throw new Error('Empty response from Ollama stream');
+    }
+
+    sendEvent({
+      type: 'done',
+      reply: fullReply.trim(),
+      speechText: sanitizeForSpeech(fullReply),
+      provider,
+      model: normalizedModel,
+      latencyMs: Date.now() - startTime,
+      webSkill: {
+        executed: webSkillResult.executed,
+        skill: webSkillResult.skill,
+        items: webSkillResult.items
+      },
+      vaultActionExecuted,
+      launchAction
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : 'Stream connection error';
+    const fallbackReply = generateDiagnosticFallbackReply(
+      lastUserMessage,
+      reason,
+      language,
+      webSkillResult
+    );
+    sendEvent({ type: 'delta', text: fallbackReply });
+    sendEvent({
+      type: 'done',
+      reply: fallbackReply,
+      speechText: sanitizeForSpeech(fallbackReply),
+      provider: `${provider} (Diagnostic Mode)`,
+      model: normalizedModel,
+      latencyMs: Date.now() - startTime,
+      webSkill: {
+        executed: webSkillResult.executed,
+        skill: webSkillResult.skill,
+        items: webSkillResult.items
+      },
+      vaultActionExecuted,
+      launchAction
+    });
   }
 }

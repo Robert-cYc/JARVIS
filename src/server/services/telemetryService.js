@@ -29,6 +29,22 @@ export function getCpuUsagePercent() {
 }
 
 /**
+ * Finds the primary non-internal IPv4 address of the host machine.
+ * @returns {string}
+ */
+export function getPrimaryIpv4Address() {
+  const nets = os.networkInterfaces() || {};
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] || []) {
+      if (net.family === 'IPv4' && !net.internal) {
+        return net.address;
+      }
+    }
+  }
+  return '127.0.0.1';
+}
+
+/**
  * Returns real-time host system telemetry formatted for the JARVIS HUD.
  * @returns {object} Telemetry metrics
  */
@@ -37,18 +53,25 @@ export function getSystemTelemetry() {
   const freeMem = os.freemem();
   const usedMem = Math.max(0, totalMem - freeMem);
   const memUsagePercent = totalMem > 0 ? Math.round((usedMem / totalMem) * 100) : 0;
+  const uptimeSeconds = Math.floor(os.uptime());
+  const hours = Math.floor(uptimeSeconds / 3600);
+  const minutes = Math.floor((uptimeSeconds % 3600) / 60);
 
   return {
     timestamp: new Date().toISOString(),
     hostname: os.hostname(),
     platform: `${os.type()} ${os.arch()}`,
+    osRelease: os.release(),
+    networkIp: getPrimaryIpv4Address(),
     cpuCores: os.cpus()?.length || 1,
     cpuModel: os.cpus()?.[0]?.model?.trim() || 'Stark Quantum Co-Processor',
     cpuUsagePercent: getCpuUsagePercent(),
     memoryTotalGb: Number((totalMem / (1024 ** 3)).toFixed(1)),
     memoryUsedGb: Number((usedMem / (1024 ** 3)).toFixed(1)),
+    memoryFreeGb: Number((freeMem / (1024 ** 3)).toFixed(1)),
     memoryUsagePercent: memUsagePercent,
-    uptimeSeconds: Math.floor(os.uptime()),
+    uptimeSeconds,
+    uptimeFormatted: `${hours}h ${minutes}m`,
     arcReactorOutputPercent: Number((98.4 + Math.sin(Date.now() / 5000) * 1.2).toFixed(1)),
     suitIntegrityPercent: 100
   };

@@ -27,6 +27,16 @@
 - **史塔克長久記憶庫、待辦清單與戰術計時器 (`Memory Vault & Tactical Timer`)**
   - **跨對話永久記憶 (`data/jarvis_vault.json`)**：可直接在對話中說「JARVIS，請記住...」或「新增待辦事項：...」，也可透過左側 `04 // MEMORY VAULT & TIMER` 面板管理，系統會自動將記憶與待辦注入每次對話背景。
   - **語音倒數計時器**：支援 `1M`、`5M`、`25M`（番茄鐘）倒數，時間到時自動播放反應爐諧波並由 J.A.R.V.I.S. 主動語音提醒。
+- **即時串流生成與分段同步語音 (`Real-Time SSE Streaming & Live Sentence TTS`)**
+  - 透過 `/api/chat/stream` NDJSON 串流技術，J.A.R.V.I.S. 會在數百毫秒內開始逐字打出回覆，且**每完成一個句子就立即送入語音佇列發聲朗讀**，大幅消除等待時間。
+- **免按鍵語音喚醒模式 (`Hands-Free "Hey JARVIS / 賈維斯" Wake-Word Mode`)**
+  - 開啟右上角 **`🎙️ WAKE WORD: ON`** 後，系統將進入連續監聽模式；隨時說出「**JARVIS，...**」或「**賈維斯，...**」即可免按鍵喚醒並執行指令。
+- **4 種經典裝甲塗裝切換、程式碼一鍵複製與報告匯出 (`Armor Suit Themes & Rich Code Blocks`)**
+  - 頂部導覽列支援即時切換 **`MARK LXXXV`**（電光青/金）、**`HULKBUSTER XLIV`**（浩克毀滅者緋紅/金）、**`STEALTH MK XV`**（潛行夜視翠綠）與 **`WAR MACHINE`**（戰爭機器鈦銀/藍）四種主題。
+  - 自動美化程式碼區塊並提供 **`[COPY CODE]`** 一鍵複製按鈕，以及 **`📥 EXPORT .MD`** 將完整對話匯出為 Markdown 戰術報告。
+- **工作坊語音快速啟動與深層硬體診斷 (`Workshop Launcher & Deep Hardware Telemetry`)**
+  - 支援直接語音或文字下令：「在 YouTube 搜尋...」、「在 Google 地圖搜尋...」、「打開 GitHub / Gmail / YouTube」，自動開啟目標視窗。
+  - 自動將主機即時 CPU 核心負載、RAM 使用量、區域網路 IPv4 位址與開機時間注入 J.A.R.V.I.S. 知識背景，隨時提供精確硬體診斷。
 - **多模態視覺感知與本地檔案分析 (`Optic Vision Scanner & File Analyzer`)**
   - **螢幕截圖掃描 (`🖥️ SCREEN`)** 與 **鏡頭快照 (`📷 CAM`)**：一鍵擷取當前螢幕視窗或 Webcam 畫面，交由多模態模型（如 Ollama `llava` / `llama3.2-vision`、Gemini、GPT-4o、Claude）進行視覺診斷。
   - **拖曳檔案與程式碼分析 (`📂 FILE`)**：支援點擊上傳或直接將 `.js`、`.py`、`.ts`、`.json`、`.log`、`.md`、`.csv` 與圖片拖曳至中央通訊視窗進行分析。

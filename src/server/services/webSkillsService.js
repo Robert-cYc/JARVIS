@@ -756,3 +756,58 @@ export async function executeWebSkillForMessage(
 
   return { executed: false, skill: 'none', items: [], contextBlock: '' };
 }
+
+/**
+ * Detects voice/text commands to launch websites, maps, or YouTube searches.
+ * @param {string} userMessage
+ * @returns {{executed: boolean, label: string, url: string} | null}
+ */
+export function detectLauncherCommand(userMessage) {
+  if (!userMessage || typeof userMessage !== 'string') return null;
+  const text = userMessage.trim();
+
+  // 1. YouTube Search ("在 YouTube 搜尋...", "search YouTube for...")
+  const ytSearch = text.match(
+    /(?:在\s*YouTube\s*(?:上)?(?:搜尋|找|播放)|search\s+youtube\s+for|play\s+on\s+youtube)[：:\s]*(.+)$/i
+  );
+  if (ytSearch && ytSearch[1].trim()) {
+    const q = ytSearch[1].trim();
+    return {
+      executed: true,
+      label: `YouTube: ${q}`,
+      url: `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`
+    };
+  }
+
+  // 2. Google Maps Search ("在 Google 地圖搜尋...", "導航到...", "map of...")
+  const mapSearch = text.match(
+    /(?:(?:在)?(?:Google\s*)?(?:地圖|Maps)\s*(?:搜尋|查|找)|導航到|navigate\s+to|google\s+maps\s+for)[：:\s]*(.+)$/i
+  );
+  if (mapSearch && mapSearch[1].trim()) {
+    const q = mapSearch[1].trim();
+    return {
+      executed: true,
+      label: `Google Maps: ${q}`,
+      url: `https://www.google.com/maps/search/${encodeURIComponent(q)}`
+    };
+  }
+
+  // 3. Direct App / Site Launch ("打開 YouTube / GitHub / Gmail / Maps")
+  if (/(打開|開啟|啟動|open\s+|launch\s+)/i.test(text)) {
+    const targets = [
+      { pattern: /youtube/i, label: 'YouTube', url: 'https://www.youtube.com' },
+      { pattern: /github/i, label: 'GitHub', url: 'https://github.com' },
+      { pattern: /gmail|信箱|郵件/i, label: 'Gmail', url: 'https://mail.google.com' },
+      { pattern: /google\s*maps|地圖/i, label: 'Google Maps', url: 'https://www.google.com/maps' },
+      { pattern: /calendar|行事曆|日曆/i, label: 'Google Calendar', url: 'https://calendar.google.com' },
+      { pattern: /netflix/i, label: 'Netflix', url: 'https://www.netflix.com' }
+    ];
+    for (const t of targets) {
+      if (t.pattern.test(text)) {
+        return { executed: true, label: t.label, url: t.url };
+      }
+    }
+  }
+
+  return null;
+}

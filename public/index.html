@@ -28,18 +28,39 @@
 
         <div class="header-telemetry">
           <div class="telemetry-pill">
+            <span>SUIT THEME:</span>
+            <select
+              id="suitThemeSelect"
+              class="hud-select"
+              style="padding: 2px 6px; font-size: 0.72rem; width: auto"
+            >
+              <option value="mark85">MARK LXXXV (Cyan/Gold)</option>
+              <option value="hulkbuster">HULKBUSTER XLIV (Crimson/Gold)</option>
+              <option value="stealth">STEALTH MK XV (Night Emerald)</option>
+              <option value="warmachine">WAR MACHINE (Silver/Blue)</option>
+            </select>
+          </div>
+          <div class="telemetry-pill">
             <span id="ollamaStatusDot" class="status-dot"></span>
-            <span>NEURAL LINK:</span>
+            <span>LINK:</span>
             <strong id="activeProviderLabel">OLLAMA LOCAL</strong>
           </div>
           <div class="telemetry-pill">
-            <span>ARC OUTPUT:</span>
+            <span>ARC:</span>
             <strong id="arcOutputHeader">98.8%</strong>
           </div>
           <div class="telemetry-pill">
-            <span>SYS TIME:</span>
+            <span>TIME:</span>
             <strong id="hudClock">--:--:--</strong>
           </div>
+          <button
+            id="wakeWordBtn"
+            type="button"
+            class="hud-btn"
+            title="Hands-Free 'Hey JARVIS / 賈維斯' Continuous Wake-Word Mode"
+          >
+            🎙️ WAKE WORD: OFF
+          </button>
           <button id="bootAudioBtn" class="hud-btn" title="Initialize HUD Audio & Greeting">
             ENGAGE HUD AUDIO
           </button>
@@ -198,6 +219,7 @@
             <div style="font-size: 0.68rem; color: var(--text-muted); margin-top: 4px">
               <div>PROCESSOR: <span id="cpuModelText">Scanning...</span></div>
               <div>HOST NODE: <span id="hostnameText">Stark-Mainframe</span></div>
+              <div>NET IPv4: <span id="networkIpText">127.0.0.1</span> &bull; UP: <span id="uptimeText">--</span></div>
             </div>
           </section>
 
@@ -522,9 +544,16 @@
               <button
                 type="button"
                 class="directive-btn"
-                data-prompt="JARVIS，請用你招牌的英國管家語氣向我進行馬克85號裝甲與系統狀態簡報。"
+                data-prompt="JARVIS，請針對我這台主機的 CPU、記憶體、IP 位址與運行時間進行深層硬體診斷簡報。"
               >
-                &gt; 裝甲與系統狀態簡報 (繁中)
+                &gt; 🛠️ 深層主機硬體、網路與記憶體診斷
+              </button>
+              <button
+                type="button"
+                class="directive-btn"
+                data-prompt="JARVIS，請在 YouTube 搜尋 Iron Man AC/DC Soundtrack"
+              >
+                &gt; 🚀 語音啟動 YouTube 搜尋鋼鐵人配樂
               </button>
               <button
                 type="button"
@@ -533,23 +562,16 @@
               >
                 &gt; Mark LXXXV Full Diagnostic (EN)
               </button>
-              <button
-                type="button"
-                class="directive-btn"
-                data-prompt="JARVIS，請幫我上網查詢今天台北的天氣與最新國際財經動態。"
-              >
-                &gt; 聯網查詢今日天氣與國際財經
-              </button>
             </div>
 
-            <button
-              id="clearHistoryBtn"
-              type="button"
-              class="hud-btn"
-              style="margin-top: 4px"
-            >
-              PURGE COMMS LOG
-            </button>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 4px">
+              <button id="exportReportBtn" type="button" class="hud-btn amber">
+                📥 EXPORT .MD
+              </button>
+              <button id="clearHistoryBtn" type="button" class="hud-btn">
+                PURGE LOG
+              </button>
+            </div>
           </section>
         </aside>
       </main>
