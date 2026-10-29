@@ -19,10 +19,17 @@
     - 結合 Web Audio API 合成頭盔通訊共鳴濾波與 HUD 裝甲互動音效（無須任何外部音訊檔案）。
   - **語音輸入 (Speech-to-Text)**：支援麥克風即時語音辨識，可直接開口向 J.A.R.V.I.S. 下達指令。
 - **史塔克全球衛星聯網與即時新聞技能 (Stark Satellite Web Uplink & Live News)**
+  - **早安綜合簡報 (`morning_briefing`)**：一鍵或語音說出「早安 JARVIS」，平行彙整即時天氣、台美股/比特幣/匯率行情、台灣與科技頭條新聞以及您的未完成待辦事項。
+  - **即時天氣與氣象雷達 (`weather_telemetry`)**：串接 Open-Meteo 衛星氣象（免金鑰），查詢台北與全球城市氣溫、體感溫度、降雨機率與風速。
+  - **股市、加密貨幣與匯率遙測 (`market_telemetry`)**：即時檢索台股加權指數 (`^TWII`)、台積電 (`2330.TW`)、輝達 (`NVDA`)、蘋果 (`AAPL`)、比特幣 (`BTC-USD`) 與美金兌台幣匯率 (`TWD=X`)。
   - **今日新聞頭條 (`todays_news`)**：支援台灣今日焦點、全球 AI 與科技新聞、國際重大頭條以及自訂主題即時新聞檢索。
-  - **即時網頁搜尋 (`web_search`)**：整合 DuckDuckGo、Google News RSS 與 Wikipedia 開放搜尋，無須付費 API Key 即可上網檢索最新資訊。
-  - **網頁深度閱讀 (`url_reader`)**：在對話框貼上任何 `http/https` 網址，J.A.R.V.I.S. 即可自動擷取內文並為您摘要朗讀。
-  - **全息新聞來源卡片**：每則聯網回答下方皆會顯示可點擊的新聞標題與來源連結卡片。
+  - **即時網頁搜尋 (`web_search`)** & **網頁深度閱讀 (`url_reader`)**：整合 DuckDuckGo、Google News RSS 與 Wikipedia 開放搜尋，並支援貼上網址自動擷取摘要。
+- **史塔克長久記憶庫、待辦清單與戰術計時器 (`Memory Vault & Tactical Timer`)**
+  - **跨對話永久記憶 (`data/jarvis_vault.json`)**：可直接在對話中說「JARVIS，請記住...」或「新增待辦事項：...」，也可透過左側 `04 // MEMORY VAULT & TIMER` 面板管理，系統會自動將記憶與待辦注入每次對話背景。
+  - **語音倒數計時器**：支援 `1M`、`5M`、`25M`（番茄鐘）倒數，時間到時自動播放反應爐諧波並由 J.A.R.V.I.S. 主動語音提醒。
+- **多模態視覺感知與本地檔案分析 (`Optic Vision Scanner & File Analyzer`)**
+  - **螢幕截圖掃描 (`🖥️ SCREEN`)** 與 **鏡頭快照 (`📷 CAM`)**：一鍵擷取當前螢幕視窗或 Webcam 畫面，交由多模態模型（如 Ollama `llava` / `llama3.2-vision`、Gemini、GPT-4o、Claude）進行視覺診斷。
+  - **拖曳檔案與程式碼分析 (`📂 FILE`)**：支援點擊上傳或直接將 `.js`、`.py`、`.ts`、`.json`、`.log`、`.md`、`.csv` 與圖片拖曳至中央通訊視窗進行分析。
 - **即時裝甲與主機遙測 (Real-Time Telemetry)**
   - 動態 HTML5 Canvas **方舟反應爐（Arc Reactor）**，隨 J.A.R.V.I.S. 說話頻率與系統狀態（待命、思考中、發聲中、聆聽中）即時改變色溫與聲波振幅。
   - 即時監控主機 CPU 核心負載、記憶體配置與系統運行狀態。

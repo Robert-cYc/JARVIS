@@ -10,6 +10,10 @@ class JarvisHudController {
     this.conversationHistory = [];
     this.webSearchEnabled = true;
     this.forceWebSearch = false;
+    this.pendingAttachment = null;
+    this.pendingImageDataUrl = '';
+    this.timerInterval = null;
+    this.timerRemainingSeconds = 0;
     this.modelCatalog = {
       ollama: { online: false, models: [] },
       cloudCatalog: {
@@ -35,6 +39,7 @@ class JarvisHudController {
     }
 
     this.refreshModelsAndTelemetry();
+    this.refreshVault();
     setInterval(() => this.refreshTelemetryOnly(), 5000);
 
     // Initial Boot Greeting in Comms Log
@@ -113,7 +118,23 @@ class JarvisHudController {
       testVoiceBtn: document.getElementById('testVoiceBtn'),
       toggleWebSkillBtn: document.getElementById('toggleWebSkillBtn'),
       toggleForceSearchBtn: document.getElementById('toggleForceSearchBtn'),
-      clearHistoryBtn: document.getElementById('clearHistoryBtn')
+      clearHistoryBtn: document.getElementById('clearHistoryBtn'),
+
+      timerDisplayBadge: document.getElementById('timerDisplayBadge'),
+      cancelTimerBtn: document.getElementById('cancelTimerBtn'),
+      vaultInput: document.getElementById('vaultInput'),
+      addTaskBtn: document.getElementById('addTaskBtn'),
+      addMemoryBtn: document.getElementById('addMemoryBtn'),
+      vaultListContainer: document.getElementById('vaultListContainer'),
+
+      attachmentBanner: document.getElementById('attachmentBanner'),
+      opticPreviewImg: document.getElementById('opticPreviewImg'),
+      attachmentLabel: document.getElementById('attachmentLabel'),
+      clearAttachmentBtn: document.getElementById('clearAttachmentBtn'),
+      fileUploadInput: document.getElementById('fileUploadInput'),
+      attachFileBtn: document.getElementById('attachFileBtn'),
+      scanScreenBtn: document.getElementById('scanScreenBtn'),
+      opticCamBtn: document.getElementById('opticCamBtn')
     };
   }
 
@@ -370,7 +391,7 @@ class JarvisHudController {
       this.audio.speak(sample);
     });
 
-    document.querySelectorAll('.directive-btn').forEach((btn) => {
+    document.querySelectorAll('[data-prompt]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const prompt = btn.getAttribute('data-prompt');
         if (prompt) {
@@ -378,6 +399,68 @@ class JarvisHudController {
         }
       });
     });
+
+    // Tactical Voice Countdown Timer
+    document.querySelectorAll('.timer-preset-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const mins = Number(btn.getAttribute('data-minutes')) || 1;
+        this.startTacticalTimer(mins * 60);
+      });
+    });
+
+    if (this.dom.cancelTimerBtn) {
+      this.dom.cancelTimerBtn.addEventListener('click', () => {
+        this.stopTacticalTimer();
+      });
+    }
+
+    // Memory Vault & To-Do List Controls
+    if (this.dom.addTaskBtn) {
+      this.dom.addTaskBtn.addEventListener('click', () => this.handleAddVaultTask());
+    }
+    if (this.dom.addMemoryBtn) {
+      this.dom.addMemoryBtn.addEventListener('click', () => this.handleAddVaultMemory());
+    }
+
+    // File Upload & Drag-and-Drop Analyzer
+    if (this.dom.attachFileBtn && this.dom.fileUploadInput) {
+      this.dom.attachFileBtn.addEventListener('click', () => {
+        this.audio.playHudClick();
+        this.dom.fileUploadInput.click();
+      });
+      this.dom.fileUploadInput.addEventListener('change', (e) => {
+        const file = e.target.files?.[0];
+        if (file) this.handleFileLoaded(file);
+        this.dom.fileUploadInput.value = '';
+      });
+    }
+
+    if (this.dom.commsConsole) {
+      this.dom.commsConsole.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        this.dom.commsConsole.classList.add('drag-over');
+      });
+      this.dom.commsConsole.addEventListener('dragleave', () => {
+        this.dom.commsConsole.classList.remove('drag-over');
+      });
+      this.dom.commsConsole.addEventListener('drop', (e) => {
+        e.preventDefault();
+        this.dom.commsConsole.classList.remove('drag-over');
+        const file = e.dataTransfer?.files?.[0];
+        if (file) this.handleFileLoaded(file);
+      });
+    }
+
+    // Optic Vision Scanner (Screen Capture & Webcam)
+    if (this.dom.scanScreenBtn) {
+      this.dom.scanScreenBtn.addEventListener('click', () => this.handleScanScreen());
+    }
+    if (this.dom.opticCamBtn) {
+      this.dom.opticCamBtn.addEventListener('click', () => this.handleOpticWebcam());
+    }
+    if (this.dom.clearAttachmentBtn) {
+      this.dom.clearAttachmentBtn.addEventListener('click', () => this.clearPendingPayload());
+    }
 
     this.dom.clearHistoryBtn.addEventListener('click', () => {
       this.audio.playHudClick(1400);
@@ -699,6 +782,274 @@ class JarvisHudController {
     this.dom.commsConsole.scrollTop = this.dom.commsConsole.scrollHeight;
   }
 
+  startTacticalTimer(durationSeconds) {
+    this.stopTacticalTimer();
+    this.timerRemainingSeconds = durationSeconds;
+    this.audio.playHudClick(2100);
+
+    const updateBadge = () => {
+      const m = String(Math.floor(this.timerRemainingSeconds / 60)).padStart(2, '0');
+      const s = String(this.timerRemainingSeconds % 60).padStart(2, '0');
+      if (this.dom.timerDisplayBadge) {
+        this.dom.timerDisplayBadge.textContent = `TIMER: ${m}:${s}`;
+      }
+    };
+
+    updateBadge();
+    this.timerInterval = setInterval(() => {
+      this.timerRemainingSeconds -= 1;
+      updateBadge();
+      if (this.timerRemainingSeconds <= 0) {
+        this.stopTacticalTimer();
+        this.audio.playBootSequence();
+        const honorific = this.dom.honorificInput.value || 'Sir';
+        const alertMsg = `${honorific}，您設定的戰術倒數計時已結束。Sir, your scheduled tactical countdown timer has concluded.`;
+        this.appendMessage({
+          role: 'assistant',
+          sender: 'J.A.R.V.I.S. // TACTICAL TIMER',
+          content: alertMsg,
+          speechText: alertMsg,
+          badge: 'TIMER COMPLETE'
+        });
+        this.audio.speak(alertMsg);
+      }
+    }, 1000);
+  }
+
+  stopTacticalTimer() {
+    if (this.timerInterval) {
+      clearInterval(this.timerInterval);
+      this.timerInterval = null;
+    }
+    this.timerRemainingSeconds = 0;
+    if (this.dom.timerDisplayBadge) {
+      this.dom.timerDisplayBadge.textContent = 'TIMER: 00:00';
+    }
+  }
+
+  async refreshVault() {
+    try {
+      const res = await fetch('/api/vault');
+      if (!res.ok) return;
+      const state = await res.json();
+      this._renderVault(state);
+    } catch {
+      // Ignore vault fetch errors
+    }
+  }
+
+  _renderVault(state) {
+    if (!this.dom.vaultListContainer) return;
+    this.dom.vaultListContainer.innerHTML = '';
+
+    const tasks = state.tasks || [];
+    const memories = state.memories || [];
+
+    if (tasks.length === 0 && memories.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.fontSize = '0.68rem';
+      empty.style.color = 'var(--text-muted)';
+      empty.textContent = 'Vault empty — Add tasks or say "JARVIS, 記住..."';
+      this.dom.vaultListContainer.appendChild(empty);
+      return;
+    }
+
+    tasks.slice(0, 8).forEach((t) => {
+      const row = document.createElement('div');
+      row.className = `vault-item ${t.completed ? 'completed' : ''}`;
+
+      const textSpan = document.createElement('span');
+      textSpan.style.cursor = 'pointer';
+      textSpan.textContent = `${t.completed ? '[✓]' : '[ ]'} ${t.title}`;
+      textSpan.addEventListener('click', async () => {
+        await fetch('/api/vault/task/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: t.id })
+        });
+        this.refreshVault();
+      });
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'vault-del-btn';
+      delBtn.textContent = '✕';
+      delBtn.addEventListener('click', async () => {
+        await fetch(`/api/vault/task?id=${encodeURIComponent(t.id)}`, {
+          method: 'DELETE'
+        });
+        this.refreshVault();
+      });
+
+      row.appendChild(textSpan);
+      row.appendChild(delBtn);
+      this.dom.vaultListContainer.appendChild(row);
+    });
+
+    memories.slice(0, 6).forEach((m) => {
+      const row = document.createElement('div');
+      row.className = 'vault-item';
+
+      const textSpan = document.createElement('span');
+      textSpan.style.color = 'var(--amber)';
+      textSpan.textContent = `🧠 ${m.content}`;
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'vault-del-btn';
+      delBtn.textContent = '✕';
+      delBtn.addEventListener('click', async () => {
+        await fetch(`/api/vault/memory?id=${encodeURIComponent(m.id)}`, {
+          method: 'DELETE'
+        });
+        this.refreshVault();
+      });
+
+      row.appendChild(textSpan);
+      row.appendChild(delBtn);
+      this.dom.vaultListContainer.appendChild(row);
+    });
+  }
+
+  async handleAddVaultTask() {
+    const val = this.dom.vaultInput?.value.trim();
+    if (!val) return;
+    this.dom.vaultInput.value = '';
+    this.audio.playHudClick();
+    await fetch('/api/vault/task', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: val })
+    });
+    this.refreshVault();
+  }
+
+  async handleAddVaultMemory() {
+    const val = this.dom.vaultInput?.value.trim();
+    if (!val) return;
+    this.dom.vaultInput.value = '';
+    this.audio.playHudClick();
+    await fetch('/api/vault/memory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: val })
+    });
+    this.refreshVault();
+  }
+
+  handleFileLoaded(file) {
+    this.audio.playHudClick(1950);
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        this.pendingImageDataUrl = String(reader.result || '');
+        this.pendingAttachment = null;
+        this._showAttachmentBanner(`OPTIC IMAGE LOADED: ${file.name}`, this.pendingImageDataUrl);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const content = String(reader.result || '');
+        this.pendingAttachment = { name: file.name, content };
+        this.pendingImageDataUrl = '';
+        this._showAttachmentBanner(
+          `FILE LOADED: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`,
+          ''
+        );
+      };
+      reader.readAsText(file);
+    }
+  }
+
+  async handleScanScreen() {
+    this.audio.playHudClick(2100);
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { cursor: 'always' },
+        audio: false
+      });
+      const track = stream.getVideoTracks()[0];
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.muted = true;
+      await video.play();
+
+      const canvas = document.createElement('canvas');
+      const maxW = 1280;
+      const scale = video.videoWidth > maxW ? maxW / video.videoWidth : 1;
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      track.stop();
+      this.pendingImageDataUrl = canvas.toDataURL('image/jpeg', 0.84);
+      this.pendingAttachment = null;
+      this._showAttachmentBanner(
+        `OPTIC SCREEN CAPTURE READY (${canvas.width}x${canvas.height})`,
+        this.pendingImageDataUrl
+      );
+    } catch {
+      // User cancelled screen picker
+    }
+  }
+
+  async handleOpticWebcam() {
+    this.audio.playHudClick(2100);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480 },
+        audio: false
+      });
+      const track = stream.getVideoTracks()[0];
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.muted = true;
+      await video.play();
+      await new Promise((r) => setTimeout(r, 250));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      track.stop();
+      this.pendingImageDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      this.pendingAttachment = null;
+      this._showAttachmentBanner(
+        `OPTIC WEBCAM SNAPSHOT READY (${canvas.width}x${canvas.height})`,
+        this.pendingImageDataUrl
+      );
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Camera unavailable';
+      this.dom.reactorStateBanner.textContent = `OPTIC SENSOR ALERT: ${msg.toUpperCase()}`;
+    }
+  }
+
+  _showAttachmentBanner(label, imgDataUrl) {
+    if (!this.dom.attachmentBanner) return;
+    this.dom.attachmentBanner.classList.remove('hidden');
+    this.dom.attachmentLabel.textContent = label;
+    if (imgDataUrl && this.dom.opticPreviewImg) {
+      this.dom.opticPreviewImg.src = imgDataUrl;
+      this.dom.opticPreviewImg.classList.remove('hidden');
+    } else if (this.dom.opticPreviewImg) {
+      this.dom.opticPreviewImg.classList.add('hidden');
+    }
+  }
+
+  clearPendingPayload() {
+    this.pendingAttachment = null;
+    this.pendingImageDataUrl = '';
+    if (this.dom.attachmentBanner) {
+      this.dom.attachmentBanner.classList.add('hidden');
+    }
+    if (this.dom.opticPreviewImg) {
+      this.dom.opticPreviewImg.src = '';
+      this.dom.opticPreviewImg.classList.add('hidden');
+    }
+  }
+
   async handleSendMessage(userText) {
     const honorific = this.dom.honorificInput.value.trim() || 'Sir';
     const provider = this.dom.providerSelect.value;
@@ -708,12 +1059,24 @@ class JarvisHudController {
       'llama3.2';
     const chosenModel = rawChosenModel.replace(/\s+/g, '');
 
+    const attachmentToSend = this.pendingAttachment;
+    const imageToSend = this.pendingImageDataUrl;
+    this.clearPendingPayload();
+
     this.audio.playTelemetryChirp();
+
+    let displayUserText = userText;
+    if (attachmentToSend) {
+      displayUserText += `\n[📂 Attached: ${attachmentToSend.name}]`;
+    }
+    if (imageToSend) {
+      displayUserText += `\n[👁️ Optic Vision Frame Attached]`;
+    }
 
     this.appendMessage({
       role: 'user',
       sender: `${honorific.toUpperCase()} // COMMAND`,
-      content: userText,
+      content: displayUserText,
       badge: `${provider.toUpperCase()} :: ${chosenModel}`
     });
 
@@ -737,7 +1100,9 @@ class JarvisHudController {
           apiKey: this.dom.apiKeyInput.value.trim(),
           baseUrl: this.dom.baseUrlInput.value.trim(),
           webSearchEnabled: this.webSearchEnabled,
-          forceWebSearch: this.forceWebSearch
+          forceWebSearch: this.forceWebSearch,
+          attachment: attachmentToSend,
+          imageDataUrl: imageToSend
         })
       });
 
@@ -747,6 +1112,10 @@ class JarvisHudController {
       }
 
       this.dom.lastLatencyText.textContent = `${data.latencyMs || 0} ms`;
+
+      if (data.vaultActionExecuted) {
+        this.refreshVault();
+      }
 
       this.conversationHistory.push({
         role: 'assistant',

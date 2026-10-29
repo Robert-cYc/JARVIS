@@ -63,6 +63,16 @@ describe('J.A.R.V.I.S. Web Skills & News Service', () => {
     const searchIntent = detectWebSkillIntent('請幫我上網搜尋量子電腦最新進展');
     assert.equal(searchIntent.intent, 'search');
 
+    const weatherIntent = detectWebSkillIntent('JARVIS，今天台北天氣如何？需要帶傘嗎？');
+    assert.equal(weatherIntent.intent, 'weather');
+    assert.equal(weatherIntent.query, '台北');
+
+    const marketIntent = detectWebSkillIntent('請查詢台積電與 NVDA 的最新股價');
+    assert.equal(marketIntent.intent, 'market');
+
+    const briefingIntent = detectWebSkillIntent('早安 JARVIS，請進行今日晨間簡報');
+    assert.equal(briefingIntent.intent, 'morning_briefing');
+
     const forceSearch = detectWebSkillIntent('Hello JARVIS', true);
     assert.equal(forceSearch.intent, 'search');
   });

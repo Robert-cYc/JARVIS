@@ -200,6 +200,50 @@
               <div>HOST NODE: <span id="hostnameText">Stark-Mainframe</span></div>
             </div>
           </section>
+
+          <!-- STARK MEMORY VAULT, TO-DO & TACTICAL TIMER -->
+          <section class="panel-section">
+            <div class="section-header">
+              <span class="section-title">04 // MEMORY VAULT &amp; TIMER</span>
+              <span id="timerDisplayBadge" class="section-badge amber">TIMER: 00:00</span>
+            </div>
+
+            <!-- Tactical Voice Countdown Timer -->
+            <div class="field-group">
+              <label class="field-label">
+                <span>TACTICAL VOICE COUNTDOWN</span>
+              </label>
+              <div class="timer-btn-row">
+                <button type="button" class="hud-btn timer-preset-btn" data-minutes="1">1M</button>
+                <button type="button" class="hud-btn timer-preset-btn" data-minutes="5">5M</button>
+                <button type="button" class="hud-btn timer-preset-btn" data-minutes="25">25M</button>
+                <button id="cancelTimerBtn" type="button" class="hud-btn danger">STOP</button>
+              </div>
+            </div>
+
+            <!-- Quick Add Task or Memory -->
+            <div class="field-group">
+              <label class="field-label">
+                <span>PERSISTENT TO-DO &amp; MEMORY VAULT</span>
+              </label>
+              <div style="display: flex; gap: 5px">
+                <input
+                  id="vaultInput"
+                  type="text"
+                  class="hud-input"
+                  placeholder="Add task or memory fact..."
+                />
+                <button id="addTaskBtn" type="button" class="hud-btn" title="Add To-Do Task">
+                  +TASK
+                </button>
+                <button id="addMemoryBtn" type="button" class="hud-btn amber" title="Save Memory Fact">
+                  +MEM
+                </button>
+              </div>
+            </div>
+
+            <div id="vaultListContainer" class="vault-list"></div>
+          </section>
         </aside>
 
         <!-- CENTER PANEL: ARC REACTOR VISUALIZER & COMMS CONSOLE -->
@@ -224,11 +268,52 @@
             </div>
           </div>
 
-          <!-- HOLOGRAPHIC COMMS LOG -->
-          <div id="commsConsole" class="comms-console"></div>
+          <!-- HOLOGRAPHIC COMMS LOG (Supports Drag & Drop Files) -->
+          <div id="commsConsole" class="comms-console" title="Drag and drop any code, log, text, or image file here"></div>
+
+          <!-- ATTACHMENT / OPTIC SCAN PREVIEW BAR -->
+          <div id="attachmentBanner" class="attachment-banner hidden">
+            <div style="display: flex; align-items: center; gap: 10px">
+              <img id="opticPreviewImg" class="optic-preview-thumb hidden" alt="Optic Scan" />
+              <span id="attachmentLabel">FILE ATTACHED</span>
+            </div>
+            <button id="clearAttachmentBtn" type="button" class="msg-replay-btn">
+              [CLEAR PAYLOAD]
+            </button>
+          </div>
 
           <!-- COMMAND TRANSMISSION BAR -->
           <form id="chatForm" class="command-deck">
+            <input
+              id="fileUploadInput"
+              type="file"
+              class="hidden"
+              accept=".txt,.md,.js,.ts,.py,.json,.csv,.log,.html,.css,.xml,.yaml,.yml,image/*"
+            />
+            <button
+              id="attachFileBtn"
+              type="button"
+              class="hud-btn"
+              title="Attach Code / Log / Document / Image"
+            >
+              📂 FILE
+            </button>
+            <button
+              id="scanScreenBtn"
+              type="button"
+              class="hud-btn amber"
+              title="Optic Screen Capture (Analyze current screen)"
+            >
+              🖥️ SCREEN
+            </button>
+            <button
+              id="opticCamBtn"
+              type="button"
+              class="hud-btn amber"
+              title="Optic Webcam Snapshot"
+            >
+              📷 CAM
+            </button>
             <button
               id="micBtn"
               type="button"
@@ -241,7 +326,7 @@
               id="userInput"
               type="text"
               class="command-input"
-              placeholder="Ask J.A.R.V.I.S. anything, Sir... (支援繁體中文與英文語音問答)"
+              placeholder="Ask J.A.R.V.I.S. anything, or drop a file / scan screen... (支援語音、檔案與視覺分析)"
               autocomplete="off"
             />
             <button id="sendBtn" type="submit" class="hud-btn">
@@ -389,6 +474,14 @@
             <div class="quick-directives">
               <button
                 type="button"
+                class="hud-btn amber"
+                style="text-align: center; margin-bottom: 4px"
+                data-prompt="早安 JARVIS，請為我進行今日晨間綜合簡報（包含即時天氣、金融市場行情、台灣與科技頭條新聞以及我的待辦事項）。"
+              >
+                🌅 ENGAGE MORNING BRIEFING (早安綜合簡報)
+              </button>
+              <button
+                type="button"
                 class="directive-btn"
                 data-prompt="JARVIS，請幫我播報今天台灣的最新新聞頭條與焦點大事。"
               >
@@ -404,9 +497,16 @@
               <button
                 type="button"
                 class="directive-btn"
-                data-prompt="J.A.R.V.I.S., show me today's top world breaking news headlines and give me a tactical briefing."
+                data-prompt="JARVIS，請幫我查詢台北今天的即時天氣、氣溫與降雨機率，出門需要帶傘嗎？"
               >
-                &gt; 🌍 Today's World Headlines (EN Live)
+                &gt; 🌦️ 台北即時天氣與降雨預報 (Live)
+              </button>
+              <button
+                type="button"
+                class="directive-btn"
+                data-prompt="JARVIS，請幫我查詢目前台股大盤、台積電(2330)、輝達(NVDA)、比特幣(BTC)與美金兌台幣匯率的最新行情。"
+              >
+                &gt; 📈 台積電 / NVDA / BTC / 匯率行情 (Live)
               </button>
             </div>
           </section>

@@ -1,4 +1,11 @@
 import { executeWebSkillForMessage } from './webSkillsService.js';
+import {
+  getVaultState,
+  addMemory,
+  addTask,
+  detectVaultCommand,
+  formatVaultContextForPrompt
+} from './memoryVaultService.js';
 
 const DEFAULT_OLLAMA_URL = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
 
@@ -195,10 +202,12 @@ export async function generateJarvisResponse({
   apiKey = '',
   baseUrl = '',
   webSearchEnabled = true,
-  forceWebSearch = false
+  forceWebSearch = false,
+  attachment = null,
+  imageDataUrl = ''
 }) {
   const startTime = Date.now();
-  const systemPrompt = buildJarvisSystemPrompt({ personaMode, language, honorific });
+  const baseSystemPrompt = buildJarvisSystemPrompt({ personaMode, language, honorific });
 
   const normalizedHistory = Array.isArray(messages)
     ? messages
@@ -209,23 +218,75 @@ export async function generateJarvisResponse({
   const lastUserMessage =
     normalizedHistory.filter((m) => m.role === 'user').pop()?.content || 'Status report';
 
+  // 1. Check if the user issued a Memory Vault or Task command
+  let vaultActionExecuted = null;
+  const vaultCmd = detectVaultCommand(lastUserMessage);
+  if (vaultCmd.action === 'add_memory') {
+    const item = await addMemory(vaultCmd.payload);
+    vaultActionExecuted = { type: 'memory', item };
+  } else if (vaultCmd.action === 'add_task') {
+    const task = await addTask(vaultCmd.payload);
+    vaultActionExecuted = { type: 'task', item: task };
+  }
+
+  const vaultState = await getVaultState();
+  const vaultContext = formatVaultContextForPrompt(vaultState);
+  const systemPrompt = vaultContext
+    ? `${baseSystemPrompt}\n\n${vaultContext}`
+    : baseSystemPrompt;
+
+  // 2. Execute live Web / Weather / Market / Morning Briefing skills if applicable
   let webSkillResult = { executed: false, skill: 'none', items: [], contextBlock: '' };
   if (webSearchEnabled) {
-    webSkillResult = await executeWebSkillForMessage(lastUserMessage, { forceWebSearch });
+    const pendingTasks = (vaultState.tasks || []).filter((t) => !t.completed);
+    webSkillResult = await executeWebSkillForMessage(lastUserMessage, {
+      forceWebSearch,
+      pendingTasks
+    });
   }
 
   const enrichedHistory = [...normalizedHistory];
-  if (webSkillResult.executed && webSkillResult.contextBlock) {
-    const lastIdx = enrichedHistory.length - 1;
-    if (lastIdx >= 0 && enrichedHistory[lastIdx].role === 'user') {
+  const lastIdx = enrichedHistory.length - 1;
+
+  if (lastIdx >= 0 && enrichedHistory[lastIdx].role === 'user') {
+    let extraContext = '';
+
+    if (vaultActionExecuted) {
+      extraContext += `\n[SYSTEM CONFIRMATION: Successfully saved ${vaultActionExecuted.type} ("${
+        vaultActionExecuted.item.content || vaultActionExecuted.item.title
+      }") into the Stark Persistent Vault. Acknowledge this politely to the user.]\n`;
+    }
+
+    if (attachment && attachment.content) {
+      extraContext +=
+        `\n[ATTACHED FILE FOR ANALYSIS: "${attachment.name || 'document'}"]\n` +
+        `\`\`\`\n${String(attachment.content).slice(0, 12000)}\n\`\`\`\n` +
+        `[INSTRUCTION: Analyze the attached file above thoroughly to answer the user's request.]\n`;
+    }
+
+    if (webSkillResult.executed && webSkillResult.contextBlock) {
+      extraContext +=
+        `\n[STARK SATELLITE LIVE INTERNET UPLINK DATA (${new Date().toISOString()})]:\n` +
+        `${webSkillResult.contextBlock}\n` +
+        `[INSTRUCTION: Use the live internet/news/weather/market data above to accurately answer the user's request in J.A.R.V.I.S.'s persona.]\n`;
+    }
+
+    if (extraContext) {
       enrichedHistory[lastIdx] = {
-        role: 'user',
-        content:
-          `${enrichedHistory[lastIdx].content}\n\n` +
-          `[STARK SATELLITE LIVE INTERNET UPLINK DATA (${new Date().toISOString()})]:\n` +
-          `${webSkillResult.contextBlock}\n` +
-          `[INSTRUCTION: Use the live internet/news data above to accurately answer the user's request in J.A.R.V.I.S.'s persona.]`
+        ...enrichedHistory[lastIdx],
+        content: `${enrichedHistory[lastIdx].content}\n${extraContext}`
       };
+    }
+  }
+
+  // Parse optional base64 image for Vision models (Optic Scanner)
+  let base64ImageRaw = '';
+  let imageMimeType = 'image/jpeg';
+  if (imageDataUrl && typeof imageDataUrl === 'string' && imageDataUrl.startsWith('data:image/')) {
+    const match = imageDataUrl.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+    if (match) {
+      imageMimeType = match[1];
+      base64ImageRaw = match[2];
     }
   }
 
@@ -235,13 +296,20 @@ export async function generateJarvisResponse({
 
     if (provider === 'ollama') {
       const ollamaUrl = (baseUrl || DEFAULT_OLLAMA_URL).replace(/\/+$/, '');
+      const ollamaMessages = enrichedHistory.map((m, idx) => {
+        if (idx === enrichedHistory.length - 1 && m.role === 'user' && base64ImageRaw) {
+          return { role: m.role, content: m.content, images: [base64ImageRaw] };
+        }
+        return { role: m.role, content: m.content };
+      });
+
       const response = await fetch(`${ollamaUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: normalizedModel,
           stream: false,
-          messages: [{ role: 'system', content: systemPrompt }, ...enrichedHistory]
+          messages: [{ role: 'system', content: systemPrompt }, ...ollamaMessages]
         })
       });
 
@@ -262,10 +330,21 @@ export async function generateJarvisResponse({
         geminiModel
       )}:generateContent?key=${encodeURIComponent(resolvedKey)}`;
 
-      const contents = enrichedHistory.map((m) => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }]
-      }));
+      const contents = enrichedHistory.map((m, idx) => {
+        const parts = [{ text: m.content }];
+        if (idx === enrichedHistory.length - 1 && m.role === 'user' && base64ImageRaw) {
+          parts.push({
+            inlineData: {
+              mimeType: imageMimeType,
+              data: base64ImageRaw
+            }
+          });
+        }
+        return {
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts
+        };
+      });
 
       const response = await fetch(url, {
         method: 'POST',
@@ -301,12 +380,25 @@ export async function generateJarvisResponse({
         headers.Authorization = `Bearer ${resolvedKey}`;
       }
 
+      const openAiMessages = enrichedHistory.map((m, idx) => {
+        if (idx === enrichedHistory.length - 1 && m.role === 'user' && imageDataUrl) {
+          return {
+            role: 'user',
+            content: [
+              { type: 'text', text: m.content },
+              { type: 'image_url', image_url: { url: imageDataUrl } }
+            ]
+          };
+        }
+        return { role: m.role, content: m.content };
+      });
+
       const response = await fetch(`${endpointBase}/chat/completions`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
           model: model || 'gpt-4o-mini',
-          messages: [{ role: 'system', content: systemPrompt }, ...enrichedHistory],
+          messages: [{ role: 'system', content: systemPrompt }, ...openAiMessages],
           temperature: 0.7
         })
       });
@@ -324,6 +416,29 @@ export async function generateJarvisResponse({
         throw new Error('Missing Anthropic API Key');
       }
 
+      const anthropicMessages = enrichedHistory.map((m, idx) => {
+        if (idx === enrichedHistory.length - 1 && m.role === 'user' && base64ImageRaw) {
+          return {
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: imageMimeType,
+                  data: base64ImageRaw
+                }
+              },
+              { type: 'text', text: m.content }
+            ]
+          };
+        }
+        return {
+          role: m.role === 'assistant' ? 'assistant' : 'user',
+          content: m.content
+        };
+      });
+
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -335,10 +450,7 @@ export async function generateJarvisResponse({
           model: model || 'claude-3-5-sonnet-latest',
           max_tokens: 2048,
           system: systemPrompt,
-          messages: enrichedHistory.map((m) => ({
-            role: m.role === 'assistant' ? 'assistant' : 'user',
-            content: m.content
-          }))
+          messages: anthropicMessages
         })
       });
 
@@ -364,6 +476,7 @@ export async function generateJarvisResponse({
       model: normalizedModel,
       latencyMs: Date.now() - startTime,
       fallbackUsed: false,
+      vaultActionExecuted,
       webSkill: {
         executed: webSkillResult.executed,
         skill: webSkillResult.skill,
@@ -387,6 +500,7 @@ export async function generateJarvisResponse({
       latencyMs: Date.now() - startTime,
       fallbackUsed: true,
       diagnosticError: reason,
+      vaultActionExecuted,
       webSkill: {
         executed: webSkillResult.executed,
         skill: webSkillResult.skill,

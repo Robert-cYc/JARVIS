@@ -11,8 +11,19 @@ import {
 import {
   fetchTodaysNews,
   searchWebIntelligence,
-  browseUrlContent
+  browseUrlContent,
+  fetchWeatherTelemetry,
+  fetchMarketTelemetry,
+  generateMorningBriefing
 } from './services/webSkillsService.js';
+import {
+  getVaultState,
+  addMemory,
+  deleteMemory,
+  addTask,
+  toggleTask,
+  deleteTask
+} from './services/memoryVaultService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -206,6 +217,71 @@ export function createServer() {
         return;
       }
 
+      if (req.method === 'GET' && pathname === '/api/skills/weather') {
+        const city = parsedUrl.searchParams.get('city') || 'Taipei';
+        const weather = await fetchWeatherTelemetry(city);
+        sendJson(res, 200, weather);
+        return;
+      }
+
+      if (req.method === 'GET' && pathname === '/api/skills/market') {
+        const market = await fetchMarketTelemetry();
+        sendJson(res, 200, market);
+        return;
+      }
+
+      if (req.method === 'GET' && pathname === '/api/skills/briefing') {
+        const city = parsedUrl.searchParams.get('city') || 'Taipei';
+        const vault = await getVaultState();
+        const pendingTasks = (vault.tasks || []).filter((t) => !t.completed);
+        const briefing = await generateMorningBriefing({ city, pendingTasks });
+        sendJson(res, 200, briefing);
+        return;
+      }
+
+      if (req.method === 'GET' && pathname === '/api/vault') {
+        const state = await getVaultState();
+        sendJson(res, 200, state);
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/vault/memory') {
+        const { content, category } = await readJsonBody(req);
+        const item = await addMemory(content, category);
+        const state = await getVaultState();
+        sendJson(res, 200, { item, state });
+        return;
+      }
+
+      if (req.method === 'DELETE' && pathname === '/api/vault/memory') {
+        const id = parsedUrl.searchParams.get('id') || '';
+        const state = await deleteMemory(id);
+        sendJson(res, 200, state);
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/vault/task') {
+        const { title } = await readJsonBody(req);
+        const task = await addTask(title);
+        const state = await getVaultState();
+        sendJson(res, 200, { task, state });
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/vault/task/toggle') {
+        const { id } = await readJsonBody(req);
+        const state = await toggleTask(id);
+        sendJson(res, 200, state);
+        return;
+      }
+
+      if (req.method === 'DELETE' && pathname === '/api/vault/task') {
+        const id = parsedUrl.searchParams.get('id') || '';
+        const state = await deleteTask(id);
+        sendJson(res, 200, state);
+        return;
+      }
+
       if (req.method === 'POST' && pathname === '/api/chat') {
         const body = await readJsonBody(req);
         const {
@@ -218,7 +294,9 @@ export function createServer() {
           apiKey = '',
           baseUrl = '',
           webSearchEnabled = true,
-          forceWebSearch = false
+          forceWebSearch = false,
+          attachment = null,
+          imageDataUrl = ''
         } = body;
 
         if (!Array.isArray(messages) || messages.length === 0) {
@@ -236,7 +314,9 @@ export function createServer() {
           apiKey,
           baseUrl,
           webSearchEnabled,
-          forceWebSearch
+          forceWebSearch,
+          attachment,
+          imageDataUrl
         });
 
         sendJson(res, 200, result);
