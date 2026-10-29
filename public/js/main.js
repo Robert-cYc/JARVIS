@@ -8,6 +8,8 @@ class JarvisHudController {
   constructor() {
     this.audio = new JarvisAudioEngine();
     this.conversationHistory = [];
+    this.webSearchEnabled = true;
+    this.forceWebSearch = false;
     this.modelCatalog = {
       ollama: { online: false, models: [] },
       cloudCatalog: {
@@ -109,6 +111,8 @@ class JarvisHudController {
       toggleResonanceBtn: document.getElementById('toggleResonanceBtn'),
       toggleSfxBtn: document.getElementById('toggleSfxBtn'),
       testVoiceBtn: document.getElementById('testVoiceBtn'),
+      toggleWebSkillBtn: document.getElementById('toggleWebSkillBtn'),
+      toggleForceSearchBtn: document.getElementById('toggleForceSearchBtn'),
       clearHistoryBtn: document.getElementById('clearHistoryBtn')
     };
   }
@@ -340,6 +344,20 @@ class JarvisHudController {
       this.audio.sfxEnabled = !this.audio.sfxEnabled;
       this._updateToggleChip(this.dom.toggleSfxBtn, this.audio.sfxEnabled);
     });
+
+    if (this.dom.toggleWebSkillBtn) {
+      this.dom.toggleWebSkillBtn.addEventListener('click', () => {
+        this.webSearchEnabled = !this.webSearchEnabled;
+        this._updateToggleChip(this.dom.toggleWebSkillBtn, this.webSearchEnabled);
+      });
+    }
+
+    if (this.dom.toggleForceSearchBtn) {
+      this.dom.toggleForceSearchBtn.addEventListener('click', () => {
+        this.forceWebSearch = !this.forceWebSearch;
+        this._updateToggleChip(this.dom.toggleForceSearchBtn, this.forceWebSearch);
+      });
+    }
 
     this.dom.testVoiceBtn.addEventListener('click', () => {
       this.audio.playHudClick(2200);
@@ -604,7 +622,7 @@ class JarvisHudController {
     }
   }
 
-  appendMessage({ role, sender, content, speechText, badge }) {
+  appendMessage({ role, sender, content, speechText, badge, sources = [] }) {
     const card = document.createElement('div');
     card.className = `msg-card ${role === 'user' ? 'user' : 'jarvis'}`;
 
@@ -627,6 +645,38 @@ class JarvisHudController {
 
     card.appendChild(meta);
     card.appendChild(body);
+
+    if (Array.isArray(sources) && sources.length > 0) {
+      const sourcesBox = document.createElement('div');
+      sourcesBox.className = 'msg-sources';
+
+      const titleEl = document.createElement('div');
+      titleEl.className = 'msg-sources-title';
+      titleEl.textContent = 'SATELLITE WEB UPLINK // VERIFIED SOURCES & LIVE LINKS';
+      sourcesBox.appendChild(titleEl);
+
+      sources.slice(0, 6).forEach((item) => {
+        if (!item.link) return;
+        const linkEl = document.createElement('a');
+        linkEl.className = 'source-link-card';
+        linkEl.href = item.link;
+        linkEl.target = '_blank';
+        linkEl.rel = 'noopener noreferrer';
+
+        const textSpan = document.createElement('span');
+        textSpan.textContent = item.title || item.link;
+
+        const tagSpan = document.createElement('span');
+        tagSpan.className = 'source-tag';
+        tagSpan.textContent = item.source || 'LIVE FEED';
+
+        linkEl.appendChild(textSpan);
+        linkEl.appendChild(tagSpan);
+        sourcesBox.appendChild(linkEl);
+      });
+
+      card.appendChild(sourcesBox);
+    }
 
     if (role === 'assistant' && speechText) {
       const actions = document.createElement('div');
@@ -652,10 +702,11 @@ class JarvisHudController {
   async handleSendMessage(userText) {
     const honorific = this.dom.honorificInput.value.trim() || 'Sir';
     const provider = this.dom.providerSelect.value;
-    const chosenModel =
+    const rawChosenModel =
       this.dom.customModelInput.value.trim() ||
       this.dom.modelSelect.value ||
       'llama3.2';
+    const chosenModel = rawChosenModel.replace(/\s+/g, '');
 
     this.audio.playTelemetryChirp();
 
@@ -669,7 +720,7 @@ class JarvisHudController {
     this.conversationHistory.push({ role: 'user', content: userText });
 
     this.visualizer.setState('THINKING');
-    this.dom.reactorStateBanner.textContent = `NEURAL SYNTHESIS IN PROGRESS // ${chosenModel.toUpperCase()}`;
+    this.dom.reactorStateBanner.textContent = `NEURAL & SATELLITE SYNTHESIS // ${chosenModel.toUpperCase()}`;
     this.dom.sendBtn.disabled = true;
 
     try {
@@ -684,7 +735,9 @@ class JarvisHudController {
           language: this.dom.languageSelect.value,
           honorific,
           apiKey: this.dom.apiKeyInput.value.trim(),
-          baseUrl: this.dom.baseUrlInput.value.trim()
+          baseUrl: this.dom.baseUrlInput.value.trim(),
+          webSearchEnabled: this.webSearchEnabled,
+          forceWebSearch: this.forceWebSearch
         })
       });
 
@@ -700,12 +753,17 @@ class JarvisHudController {
         content: data.reply
       });
 
+      const skillBadge = data.webSkill?.executed
+        ? ` // UPLINK: ${data.webSkill.skill.toUpperCase()}`
+        : '';
+
       this.appendMessage({
         role: 'assistant',
         sender: 'J.A.R.V.I.S.',
         content: data.reply,
         speechText: data.speechText || data.reply,
-        badge: `${data.provider.toUpperCase()} // ${data.model} // ${data.latencyMs}ms`
+        badge: `${data.provider.toUpperCase()} // ${data.model}${skillBadge} // ${data.latencyMs}ms`,
+        sources: data.webSkill?.items || []
       });
 
       this.audio.speak(data.speechText || data.reply);

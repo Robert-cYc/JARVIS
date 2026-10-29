@@ -18,6 +18,11 @@
     - 自動優先匹配英式男聲（`en-GB`）或繁體中文語音（`zh-TW`），並預設調校低沉管家音調（`Pitch: 0.92`、`Rate: 1.04x`）。
     - 結合 Web Audio API 合成頭盔通訊共鳴濾波與 HUD 裝甲互動音效（無須任何外部音訊檔案）。
   - **語音輸入 (Speech-to-Text)**：支援麥克風即時語音辨識，可直接開口向 J.A.R.V.I.S. 下達指令。
+- **史塔克全球衛星聯網與即時新聞技能 (Stark Satellite Web Uplink & Live News)**
+  - **今日新聞頭條 (`todays_news`)**：支援台灣今日焦點、全球 AI 與科技新聞、國際重大頭條以及自訂主題即時新聞檢索。
+  - **即時網頁搜尋 (`web_search`)**：整合 DuckDuckGo、Google News RSS 與 Wikipedia 開放搜尋，無須付費 API Key 即可上網檢索最新資訊。
+  - **網頁深度閱讀 (`url_reader`)**：在對話框貼上任何 `http/https` 網址，J.A.R.V.I.S. 即可自動擷取內文並為您摘要朗讀。
+  - **全息新聞來源卡片**：每則聯網回答下方皆會顯示可點擊的新聞標題與來源連結卡片。
 - **即時裝甲與主機遙測 (Real-Time Telemetry)**
   - 動態 HTML5 Canvas **方舟反應爐（Arc Reactor）**，隨 J.A.R.V.I.S. 說話頻率與系統狀態（待命、思考中、發聲中、聆聽中）即時改變色溫與聲波振幅。
   - 即時監控主機 CPU 核心負載、記憶體配置與系統運行狀態。
@@ -128,4 +133,7 @@ npm test
 | `GET` | `/api/telemetry` | 取得主機 CPU、記憶體、方舟反應爐輸出與 Ollama 狀態 |
 | `GET` | `/api/models` | 取得已安裝的 Ollama 模型清單與雲端預設模型目錄 |
 | `POST` | `/api/ollama/pull` | 串流下載指定之 Ollama 本地模型（回傳 NDJSON 進度） |
-| `POST` | `/api/chat` | 傳送對話紀錄與人格參數，取得 J.A.R.V.I.S. 回覆與語音清理文本 |
+| `POST` | `/api/chat` | 傳送對話紀錄與人格參數，自動觸發聯網技能並取得 J.A.R.V.I.S. 回覆 |
+| `GET` | `/api/skills/news` | 取得今日即時新聞頭條（支援 `?edition=tw\|tech\|us&q=關鍵字`） |
+| `GET` | `/api/skills/search` | 執行即時網路搜尋（`?q=搜尋關鍵字`） |
+| `GET` | `/api/skills/browse` | 讀取並擷取指定網址之純文字內容（`?url=https://...`） |

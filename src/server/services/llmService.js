@@ -1,3 +1,5 @@
+import { executeWebSkillForMessage } from './webSkillsService.js';
+
 const DEFAULT_OLLAMA_URL = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
 
 export const PERSONA_MODES = {
@@ -125,9 +127,37 @@ export async function getOllamaStatus(baseUrl = DEFAULT_OLLAMA_URL) {
 /**
  * Generates an in-character JARVIS offline diagnostic reply when an external LLM is not yet configured.
  */
-export function generateDiagnosticFallbackReply(userMessage, reason, language = 'auto') {
+export function generateDiagnosticFallbackReply(
+  userMessage,
+  reason,
+  language = 'auto',
+  webSkillResult = null
+) {
   const isChinese =
     language === 'zh-TW' || /[\u4e00-\u9fff]/.test(userMessage || '');
+
+  if (webSkillResult?.executed && Array.isArray(webSkillResult.items) && webSkillResult.items.length > 0) {
+    const topItems = webSkillResult.items.slice(0, 6);
+    if (isChinese) {
+      const listText = topItems
+        .map((item, i) => `${i + 1}. ${item.title}${item.source ? ` [${item.source}]` : ''}`)
+        .join('\n');
+      return (
+        `先生，我已透過史塔克全球衛星網路（Stark Satellite Uplink）為您即時檢索最新資訊：\n\n` +
+        `${listText}\n\n` +
+        `（備註：外部 LLM 推理核心目前處於離線狀態 [${reason}]，以上為衛星直連即時情報摘要。）`
+      );
+    }
+
+    const listTextEn = topItems
+      .map((item, i) => `${i + 1}. ${item.title}${item.source ? ` [${item.source}]` : ''}`)
+      .join('\n');
+    return (
+      `Right away, Sir. I have retrieved the latest live intelligence via the Stark Global Satellite Uplink:\n\n` +
+      `${listTextEn}\n\n` +
+      `(Note: Primary neural core is currently offline [${reason}]; presenting direct satellite feed.)`
+    );
+  }
 
   if (isChinese) {
     return (
@@ -153,7 +183,7 @@ export function generateDiagnosticFallbackReply(userMessage, reason, language = 
 /**
  * Sends a chat completion request to the configured LLM provider.
  * @param {object} params
- * @returns {Promise<{reply: string, speechText: string, provider: string, model: string, latencyMs: number, fallbackUsed: boolean}>}
+ * @returns {Promise<{reply: string, speechText: string, provider: string, model: string, latencyMs: number, fallbackUsed: boolean, webSkill?: object}>}
  */
 export async function generateJarvisResponse({
   provider = 'ollama',
@@ -163,7 +193,9 @@ export async function generateJarvisResponse({
   language = 'auto',
   honorific = 'Sir',
   apiKey = '',
-  baseUrl = ''
+  baseUrl = '',
+  webSearchEnabled = true,
+  forceWebSearch = false
 }) {
   const startTime = Date.now();
   const systemPrompt = buildJarvisSystemPrompt({ personaMode, language, honorific });
@@ -177,6 +209,26 @@ export async function generateJarvisResponse({
   const lastUserMessage =
     normalizedHistory.filter((m) => m.role === 'user').pop()?.content || 'Status report';
 
+  let webSkillResult = { executed: false, skill: 'none', items: [], contextBlock: '' };
+  if (webSearchEnabled) {
+    webSkillResult = await executeWebSkillForMessage(lastUserMessage, { forceWebSearch });
+  }
+
+  const enrichedHistory = [...normalizedHistory];
+  if (webSkillResult.executed && webSkillResult.contextBlock) {
+    const lastIdx = enrichedHistory.length - 1;
+    if (lastIdx >= 0 && enrichedHistory[lastIdx].role === 'user') {
+      enrichedHistory[lastIdx] = {
+        role: 'user',
+        content:
+          `${enrichedHistory[lastIdx].content}\n\n` +
+          `[STARK SATELLITE LIVE INTERNET UPLINK DATA (${new Date().toISOString()})]:\n` +
+          `${webSkillResult.contextBlock}\n` +
+          `[INSTRUCTION: Use the live internet/news data above to accurately answer the user's request in J.A.R.V.I.S.'s persona.]`
+      };
+    }
+  }
+
   try {
     let reply = '';
     const normalizedModel = String(model || 'llama3.2').replace(/\s+/g, '');
@@ -189,7 +241,7 @@ export async function generateJarvisResponse({
         body: JSON.stringify({
           model: normalizedModel,
           stream: false,
-          messages: [{ role: 'system', content: systemPrompt }, ...normalizedHistory]
+          messages: [{ role: 'system', content: systemPrompt }, ...enrichedHistory]
         })
       });
 
@@ -210,7 +262,7 @@ export async function generateJarvisResponse({
         geminiModel
       )}:generateContent?key=${encodeURIComponent(resolvedKey)}`;
 
-      const contents = normalizedHistory.map((m) => ({
+      const contents = enrichedHistory.map((m) => ({
         role: m.role === 'assistant' ? 'model' : 'user',
         parts: [{ text: m.content }]
       }));
@@ -254,7 +306,7 @@ export async function generateJarvisResponse({
         headers,
         body: JSON.stringify({
           model: model || 'gpt-4o-mini',
-          messages: [{ role: 'system', content: systemPrompt }, ...normalizedHistory],
+          messages: [{ role: 'system', content: systemPrompt }, ...enrichedHistory],
           temperature: 0.7
         })
       });
@@ -283,7 +335,7 @@ export async function generateJarvisResponse({
           model: model || 'claude-3-5-sonnet-latest',
           max_tokens: 2048,
           system: systemPrompt,
-          messages: normalizedHistory.map((m) => ({
+          messages: enrichedHistory.map((m) => ({
             role: m.role === 'assistant' ? 'assistant' : 'user',
             content: m.content
           }))
@@ -309,13 +361,23 @@ export async function generateJarvisResponse({
       reply: reply.trim(),
       speechText: sanitizeForSpeech(reply),
       provider,
-      model,
+      model: normalizedModel,
       latencyMs: Date.now() - startTime,
-      fallbackUsed: false
+      fallbackUsed: false,
+      webSkill: {
+        executed: webSkillResult.executed,
+        skill: webSkillResult.skill,
+        items: webSkillResult.items
+      }
     };
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'Unknown neural link error';
-    const fallbackReply = generateDiagnosticFallbackReply(lastUserMessage, reason, language);
+    const fallbackReply = generateDiagnosticFallbackReply(
+      lastUserMessage,
+      reason,
+      language,
+      webSkillResult
+    );
 
     return {
       reply: fallbackReply,
@@ -324,7 +386,12 @@ export async function generateJarvisResponse({
       model,
       latencyMs: Date.now() - startTime,
       fallbackUsed: true,
-      diagnosticError: reason
+      diagnosticError: reason,
+      webSkill: {
+        executed: webSkillResult.executed,
+        skill: webSkillResult.skill,
+        items: webSkillResult.items
+      }
     };
   }
 }

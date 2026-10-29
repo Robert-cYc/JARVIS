@@ -465,6 +465,51 @@ body::after {
   background: rgba(0, 240, 255, 0.25);
 }
 
+.msg-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(0, 240, 255, 0.25);
+}
+
+.msg-sources-title {
+  font-family: var(--font-display);
+  font-size: 0.65rem;
+  color: var(--amber);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+.source-link-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  background: rgba(0, 20, 40, 0.72);
+  border: 1px solid rgba(0, 240, 255, 0.22);
+  color: var(--cyan);
+  text-decoration: none;
+  font-size: 0.74rem;
+  transition: all 0.15s ease;
+}
+
+.source-link-card:hover {
+  border-color: var(--amber);
+  background: rgba(255, 170, 0, 0.12);
+  color: #fff;
+}
+
+.source-tag {
+  font-size: 0.64rem;
+  color: var(--amber);
+  white-space: nowrap;
+  padding: 1px 5px;
+  border: 1px solid var(--amber-dim);
+}
+
 /* Command Input Bar */
 .command-deck {
   display: grid;

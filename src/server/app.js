@@ -8,6 +8,11 @@ import {
   generateJarvisResponse,
   PERSONA_MODES
 } from './services/llmService.js';
+import {
+  fetchTodaysNews,
+  searchWebIntelligence,
+  browseUrlContent
+} from './services/webSkillsService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -171,6 +176,36 @@ export function createServer() {
         return;
       }
 
+      if (req.method === 'GET' && pathname === '/api/skills/news') {
+        const edition = parsedUrl.searchParams.get('edition') || 'tw';
+        const query = parsedUrl.searchParams.get('q') || '';
+        const news = await fetchTodaysNews({ edition, query, limit: 8 });
+        sendJson(res, 200, news);
+        return;
+      }
+
+      if (req.method === 'GET' && pathname === '/api/skills/search') {
+        const query = parsedUrl.searchParams.get('q') || '';
+        if (!query.trim()) {
+          sendJson(res, 400, { error: 'Search query is required, Sir.' });
+          return;
+        }
+        const results = await searchWebIntelligence(query, 6);
+        sendJson(res, 200, results);
+        return;
+      }
+
+      if (req.method === 'GET' && pathname === '/api/skills/browse') {
+        const targetUrl = parsedUrl.searchParams.get('url') || '';
+        if (!targetUrl.startsWith('http')) {
+          sendJson(res, 400, { error: 'Valid HTTP/HTTPS URL is required, Sir.' });
+          return;
+        }
+        const page = await browseUrlContent(targetUrl);
+        sendJson(res, 200, page);
+        return;
+      }
+
       if (req.method === 'POST' && pathname === '/api/chat') {
         const body = await readJsonBody(req);
         const {
@@ -181,7 +216,9 @@ export function createServer() {
           language = 'auto',
           honorific = 'Sir',
           apiKey = '',
-          baseUrl = ''
+          baseUrl = '',
+          webSearchEnabled = true,
+          forceWebSearch = false
         } = body;
 
         if (!Array.isArray(messages) || messages.length === 0) {
@@ -197,7 +234,9 @@ export function createServer() {
           language,
           honorific,
           apiKey,
-          baseUrl
+          baseUrl,
+          webSearchEnabled,
+          forceWebSearch
         });
 
         sendJson(res, 200, result);
