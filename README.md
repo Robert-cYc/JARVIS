@@ -52,6 +52,8 @@
 
 ```text
 JARVIS/
+├── autorun.bat                      # Windows 雙擊一鍵自動啟動腳本
+├── run.js                           # 一鍵整合啟動器 (.env 初始化 / Ollama 自動啟動 / 伺服器與瀏覽器啟動)
 ├── .env.example                     # 環境變數範本
 ├── package.json                     # 專案指令與設定 (Node.js ESM)
 ├── public/                          # 前端全息 HUD 介面
@@ -108,11 +110,23 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 ANTHROPIC_API_KEY=
 ```
 
-### 2. 啟動 J.A.R.V.I.S. 系統
+### 2. 啟動 J.A.R.V.I.S. 系統（一鍵全自動啟動）
+
+直接使用單一入口檔 `run.js`（或 `npm start`）即可自動完成 `.env` 初始化、背景喚醒 Ollama、記憶庫載入、連接埠自動避讓並開啟瀏覽器：
 
 ```bash
-# 一般啟動
+# Windows 雙擊或命令列執行
+.\autorun.bat
+
+# 一鍵啟動所有服務並自動開啟瀏覽器
+node run.js
+# 或
 npm start
+
+# 進階啟動參數（選用）
+node run.js --test                  # 啟動前先執行單元測試診斷
+node run.js --port 8080 --no-open   # 指定連接埠且不自動彈出瀏覽器
+node run.js --skip-ollama           # 略過本地 Ollama 自動喚醒
 
 # 開發模式（自動監聽檔案變更重啟）
 npm run dev

@@ -139,7 +139,6 @@ class JarvisHudController {
       fileUploadInput: document.getElementById('fileUploadInput'),
       attachFileBtn: document.getElementById('attachFileBtn'),
       scanScreenBtn: document.getElementById('scanScreenBtn'),
-      opticCamBtn: document.getElementById('opticCamBtn'),
 
       cmdPaletteBtn: document.getElementById('cmdPaletteBtn'),
       commandPaletteModal: document.getElementById('commandPaletteModal'),
@@ -580,12 +579,9 @@ class JarvisHudController {
       }
     });
 
-    // Optic Vision Scanner (Screen Capture & Webcam)
+    // Optic Vision Scanner (Screen Capture)
     if (this.dom.scanScreenBtn) {
       this.dom.scanScreenBtn.addEventListener('click', () => this.handleScanScreen());
-    }
-    if (this.dom.opticCamBtn) {
-      this.dom.opticCamBtn.addEventListener('click', () => this.handleOpticWebcam());
     }
     if (this.dom.clearAttachmentBtn) {
       this.dom.clearAttachmentBtn.addEventListener('click', () => this.clearPendingPayload());
@@ -1501,39 +1497,6 @@ class JarvisHudController {
       );
     } catch {
       // User cancelled screen picker
-    }
-  }
-
-  async handleOpticWebcam() {
-    this.audio.playHudClick(2100);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480 },
-        audio: false
-      });
-      const track = stream.getVideoTracks()[0];
-      const video = document.createElement('video');
-      video.srcObject = stream;
-      video.muted = true;
-      await video.play();
-      await new Promise((r) => setTimeout(r, 250));
-
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      track.stop();
-      this.pendingImageDataUrl = canvas.toDataURL('image/jpeg', 0.85);
-      this.pendingAttachment = null;
-      this._showAttachmentBanner(
-        `OPTIC WEBCAM SNAPSHOT READY (${canvas.width}x${canvas.height})`,
-        this.pendingImageDataUrl
-      );
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Camera unavailable';
-      this.dom.reactorStateBanner.textContent = `OPTIC SENSOR ALERT: ${msg.toUpperCase()}`;
     }
   }
 

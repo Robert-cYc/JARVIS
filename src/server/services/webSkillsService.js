@@ -56,18 +56,18 @@ export function extractReadableTextFromHtml(html, maxLength = 4000) {
 }
 
 /**
- * Parses an RSS 2.0 XML string into structured news items.
+ * Parses an RSS 2.0 XML string into structured news items, sorted newest-first by pubDate.
  * @param {string} xml
  * @param {number} [limit=8]
  * @returns {Array<{title: string, link: string, pubDate: string, source: string}>}
  */
 export function parseRssItems(xml, limit = 8) {
   if (!xml || typeof xml !== 'string') return [];
-  const items = [];
+  const rawItems = [];
   const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
   let match;
 
-  while ((match = itemRegex.exec(xml)) !== null && items.length < limit) {
+  while ((match = itemRegex.exec(xml)) !== null) {
     const block = match[1];
     const titleMatch = block.match(/<title>([\s\S]*?)<\/title>/i);
     const linkMatch = block.match(/<link>([\s\S]*?)<\/link>/i);
@@ -85,16 +85,21 @@ export function parseRssItems(xml, limit = 8) {
     }
 
     if (rawTitle) {
-      items.push({
+      const parsedTime = pubDate ? Date.parse(pubDate) : NaN;
+      rawItems.push({
         title: rawTitle,
         link,
         pubDate,
-        source: source || 'Global Feed'
+        source: source || 'Global Feed',
+        _timestamp: Number.isNaN(parsedTime) ? 0 : parsedTime
       });
     }
   }
 
-  return items;
+  // Sort strictly newest-first whenever valid pubDate timestamps exist
+  rawItems.sort((a, b) => b._timestamp - a._timestamp);
+
+  return rawItems.slice(0, limit).map(({ _timestamp, ...item }) => item);
 }
 
 /**
@@ -110,7 +115,9 @@ async function fetchWithTimeout(url, timeoutMs = 6500) {
     return await fetch(url, {
       headers: {
         'User-Agent': USER_AGENT,
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache'
       },
       signal: controller.signal
     });
@@ -121,6 +128,7 @@ async function fetchWithTimeout(url, timeoutMs = 6500) {
 
 /**
  * Fetches today's live news headlines by category/region or custom topic.
+ * Enforces `when:1d` (last 24 hours) on Google News search queries so stale articles are excluded.
  * @param {object} options
  * @param {string} [options.edition='tw'] - 'tw' (Taiwan 繁中), 'us' (Global English), 'tech' (Tech/AI)
  * @param {string} [options.query=''] - Optional specific news search topic
@@ -132,28 +140,52 @@ export async function fetchTodaysNews({
   query = '',
   limit = 8
 } = {}) {
-  let feedUrl = 'https://news.google.com/rss?hl=zh-TW&gl=TW&ceid=TW:zh-Hant';
+  let feedUrl =
+    'https://news.google.com/rss/search?q=%E5%8F%B0%E7%81%A3+when:1d&hl=zh-TW&gl=TW&ceid=TW:zh-Hant';
+  let fallbackUrl = 'https://news.google.com/rss?hl=zh-TW&gl=TW&ceid=TW:zh-Hant';
 
   if (query && query.trim().length > 0) {
-    const isChinese = /[\u4e00-\u9fff]/.test(query);
+    const cleanQ = query.trim();
+    const isChinese = /[\u4e00-\u9fff]/.test(cleanQ);
     const hl = isChinese ? 'zh-TW&gl=TW&ceid=TW:zh-Hant' : 'en-US&gl=US&ceid=US:en';
+    const timeBoundedQuery = /\bwhen:\d+[hdmy]\b/i.test(cleanQ)
+      ? cleanQ
+      : `${cleanQ} when:1d`;
     feedUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(
-      query.trim()
+      timeBoundedQuery
+    )}&hl=${hl}`;
+    fallbackUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(
+      `${cleanQ} when:7d`
     )}&hl=${hl}`;
   } else if (edition === 'us' || edition === 'en') {
-    feedUrl = 'https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en';
+    feedUrl =
+      'https://news.google.com/rss/search?q=world+OR+US+when:1d&hl=en-US&gl=US&ceid=US:en';
+    fallbackUrl = 'https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en';
   } else if (edition === 'tech') {
     feedUrl =
-      'https://news.google.com/rss/search?q=AI+OR+Technology+OR+%E7%A7%91%E6%8A%80&hl=zh-TW&gl=TW&ceid=TW:zh-Hant';
+      'https://news.google.com/rss/search?q=(AI+OR+%E4%BA%BA%E5%B7%A5%E6%99%BA%E6%85%A7+OR+%E7%A7%91%E6%8A%80+OR+%E5%8D%8A%E5%B0%8E%E9%AB%94)+when:1d&hl=zh-TW&gl=TW&ceid=TW:zh-Hant';
+    fallbackUrl =
+      'https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=zh-TW&gl=TW&ceid=TW:zh-Hant';
   }
 
   try {
-    const response = await fetchWithTimeout(feedUrl, 7000);
+    let response = await fetchWithTimeout(feedUrl, 7000);
     if (!response.ok) {
       throw new Error(`News feed HTTP ${response.status}`);
     }
-    const xml = await response.text();
-    const items = parseRssItems(xml, limit);
+    let xml = await response.text();
+    let items = parseRssItems(xml, limit);
+
+    if (items.length < 3 && fallbackUrl) {
+      const fbRes = await fetchWithTimeout(fallbackUrl, 6500);
+      if (fbRes.ok) {
+        const fbXml = await fbRes.text();
+        const fbItems = parseRssItems(fbXml, limit);
+        if (fbItems.length > items.length) {
+          items = fbItems;
+        }
+      }
+    }
 
     const formattedLines = items.map(
       (item, idx) =>
@@ -929,9 +961,10 @@ export function detectWebSkillIntent(userMessage, forceWebSearch = false) {
     // Check if user asked for news about a specific topic
     const cleanedTopic = text
       .replace(
-        /(請|幫我|告訴我|給我看|查詢|搜尋|今天|今日|最新|有什麼|的|新聞|頭條|焦點|報紙|JARVIS|賈維斯|show\s+me|what\s+is|today'?s|latest|news|headlines|about|on|[，。！？?.,])/gi,
+        /(請|幫我|告訴我|給我看|播報|整理|重點整理|摘要|查詢|搜尋|上網|今天|今日|最新|即時|現在|目前|有什麼|的|與|及|和|新聞|頭條|焦點|大事|時事|天下事|報紙|台灣|臺灣|全球|國際|世界|美國|科技界|科技|並|JARVIS|賈維斯|show\s+me|tell\s+me|what\s+are|what\s+is|today'?s|latest|breaking|top|global|world|taiwan|news|headlines|current\s+events|about|on|for|in|[，。！？?.,、])/gi,
         ' '
       )
+      .replace(/\s+/g, ' ')
       .trim();
 
     const edition = isTech ? 'tech' : isGlobalEn ? 'us' : 'tw';

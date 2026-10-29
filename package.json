@@ -3,8 +3,12 @@
   "version": "1.0.0",
   "description": "Stark Industries J.A.R.V.I.S. Holographic HUD Interface with Multi-LLM & Ollama Support",
   "type": "module",
+  "bin": {
+    "jarvis": "./run.js"
+  },
   "scripts": {
-    "start": "node --env-file-if-exists=.env src/server/index.js",
+    "start": "node run.js",
+    "server": "node --env-file-if-exists=.env src/server/index.js",
     "dev": "node --watch --env-file-if-exists=.env src/server/index.js",
     "test": "node --test tests/*.test.js"
   }

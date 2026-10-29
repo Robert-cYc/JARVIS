@@ -66,10 +66,19 @@ export class JarvisAudioEngine {
     }
 
     const hasChinese = /[\u4e00-\u9fff]/.test(text);
+    const isFemaleVoiceName = (name) =>
+      /hsiao|hanhan|yating|meijia|huihui|yaoyao|xiaoxiao|xiaoyi|zira|hazel|susan|libby|sonia|female/i.test(
+        name
+      );
 
     if (hasChinese) {
       const zhPreferred = [
-        (v) => v.lang === 'zh-TW' && /yun-?jhe|male|hsiao|google/i.test(v.name),
+        // 1. Strictly prioritize male Traditional/Simplified Chinese voices first
+        (v) => v.lang === 'zh-TW' && /yun-?jhe|male/i.test(v.name),
+        (v) => v.lang.startsWith('zh') && /yun-?jhe|yun-?xi|yun-?yang|kang-?kang|wan-?lung|danny|male/i.test(v.name),
+        // 2. Any zh-TW voice that is NOT a known female voice
+        (v) => v.lang === 'zh-TW' && !isFemaleVoiceName(v.name) && !/google/i.test(v.name),
+        // 3. Fallback to available zh-TW / zh-HK / zh voices
         (v) => v.lang === 'zh-TW',
         (v) => v.lang === 'zh-HK',
         (v) => v.lang.startsWith('zh')
@@ -82,9 +91,11 @@ export class JarvisAudioEngine {
 
     const enGbPreferred = [
       (v) => /Google UK English Male/i.test(v.name),
-      (v) => /Microsoft (George|Ryan|Oliver)/i.test(v.name),
-      (v) => /Daniel|Arthur|Oliver/i.test(v.name) && v.lang.startsWith('en'),
+      (v) => /Microsoft (George|Ryan|Oliver|David|Mark|Guy)/i.test(v.name),
+      (v) => /Daniel|Arthur|Oliver|Alex/i.test(v.name) && v.lang.startsWith('en'),
       (v) => v.lang === 'en-GB' && /male/i.test(v.name),
+      (v) => v.lang === 'en-GB' && !isFemaleVoiceName(v.name),
+      (v) => v.lang.startsWith('en') && !isFemaleVoiceName(v.name),
       (v) => v.lang === 'en-GB',
       (v) => v.lang.startsWith('en')
     ];

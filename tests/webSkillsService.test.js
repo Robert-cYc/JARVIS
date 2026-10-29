@@ -28,10 +28,16 @@ describe('J.A.R.V.I.S. Web Skills & News Service', () => {
     assert.ok(!text.includes('color: red'));
   });
 
-  it('parses RSS 2.0 XML items into structured news headlines', () => {
+  it('parses RSS 2.0 XML items into structured news headlines sorted newest-first', () => {
     const sampleRss = `
       <rss version="2.0">
         <channel>
+          <item>
+            <title>Older Headline - TechDaily</title>
+            <link>https://example.com/news/old</link>
+            <pubDate>Mon, 20 Oct 2025 03:00:00 GMT</pubDate>
+            <source>TechDaily</source>
+          </item>
           <item>
             <title>AI Breakthrough in 2026 - TechDaily</title>
             <link>https://example.com/news/1</link>
@@ -42,16 +48,17 @@ describe('J.A.R.V.I.S. Web Skills & News Service', () => {
       </rss>
     `;
     const items = parseRssItems(sampleRss, 5);
-    assert.equal(items.length, 1);
+    assert.equal(items.length, 2);
     assert.equal(items[0].title, 'AI Breakthrough in 2026 - TechDaily');
     assert.equal(items[0].link, 'https://example.com/news/1');
     assert.equal(items[0].source, 'TechDaily');
   });
 
   it('detects news, web search, and URL reader intents accurately', () => {
-    const newsIntent = detectWebSkillIntent('JARVIS，請告訴我今天台灣有什麼新聞頭條？');
+    const newsIntent = detectWebSkillIntent('JARVIS，請幫我播報今天台灣的最新新聞頭條與焦點大事。');
     assert.equal(newsIntent.intent, 'news');
     assert.equal(newsIntent.edition, 'tw');
+    assert.equal(newsIntent.query, '');
 
     const techNewsIntent = detectWebSkillIntent("Show me today's AI and technology news");
     assert.equal(techNewsIntent.intent, 'news');
