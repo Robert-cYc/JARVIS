@@ -40,7 +40,7 @@ class JarvisHudController {
 
     this.refreshModelsAndTelemetry();
     this.refreshVault();
-    setInterval(() => this.refreshTelemetryOnly(), 5000);
+    setInterval(() => this.refreshTelemetryOnly(), 2000);
 
     // Initial Boot Greeting in Comms Log
     this.appendMessage({
@@ -90,9 +90,14 @@ class JarvisHudController {
       hostPlatformBadge: document.getElementById('hostPlatformBadge'),
       cpuLoadText: document.getElementById('cpuLoadText'),
       cpuLoadBar: document.getElementById('cpuLoadBar'),
+      gpuMetricRow: document.getElementById('gpuMetricRow'),
+      gpuMemLoadText: document.getElementById('gpuMemLoadText'),
+      gpuMemLoadBar: document.getElementById('gpuMemLoadBar'),
       memLoadText: document.getElementById('memLoadText'),
       memLoadBar: document.getElementById('memLoadBar'),
       cpuModelText: document.getElementById('cpuModelText'),
+      gpuModelRow: document.getElementById('gpuModelRow'),
+      gpuModelText: document.getElementById('gpuModelText'),
       hostnameText: document.getElementById('hostnameText'),
 
       arcReactorCanvas: document.getElementById('arcReactorCanvas'),
@@ -666,6 +671,22 @@ class JarvisHudController {
     this.dom.arcOutputHeader.textContent = `${t.arcReactorOutputPercent}%`;
     this.dom.cpuLoadText.textContent = `${t.cpuUsagePercent}%`;
     this.dom.cpuLoadBar.style.width = `${t.cpuUsagePercent}%`;
+
+    if (t.gpu && t.gpu.available && this.dom.gpuMetricRow) {
+      this.dom.gpuMetricRow.classList.remove('hidden');
+      this.dom.gpuMemLoadText.textContent = `${t.gpu.memoryUsedGb} / ${t.gpu.memoryTotalGb} GB (${t.gpu.memoryUsagePercent}%)`;
+      this.dom.gpuMemLoadBar.style.width = `${t.gpu.memoryUsagePercent}%`;
+      if (this.dom.gpuModelRow && this.dom.gpuModelText) {
+        this.dom.gpuModelRow.classList.remove('hidden');
+        this.dom.gpuModelText.textContent = `${t.gpu.name} (${t.gpu.utilizationPercent}% • ${t.gpu.temperatureC}°C)`;
+      }
+    } else if (this.dom.gpuMetricRow) {
+      this.dom.gpuMetricRow.classList.add('hidden');
+      if (this.dom.gpuModelRow) {
+        this.dom.gpuModelRow.classList.add('hidden');
+      }
+    }
+
     this.dom.memLoadText.textContent = `${t.memoryUsedGb} / ${t.memoryTotalGb} GB (${t.memoryUsagePercent}%)`;
     this.dom.memLoadBar.style.width = `${t.memoryUsagePercent}%`;
     this.dom.cpuModelText.textContent = t.cpuModel;

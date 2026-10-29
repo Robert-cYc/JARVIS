@@ -236,10 +236,15 @@ export async function generateJarvisResponse({
   const vaultState = await getVaultState();
   const vaultContext = formatVaultContextForPrompt(vaultState);
   const hw = getSystemTelemetry();
+  const gpuLine =
+    hw.gpu && hw.gpu.available
+      ? `- GPU: ${hw.gpu.name} (VRAM: ${hw.gpu.memoryUsedGb} GB / ${hw.gpu.memoryTotalGb} GB [${hw.gpu.memoryUsagePercent}%], Core Util: ${hw.gpu.utilizationPercent}%, Temp: ${hw.gpu.temperatureC}°C)\n`
+      : '';
   const hwContext =
     `[REAL-TIME HOST HARDWARE TELEMETRY]:\n` +
     `- Hostname: ${hw.hostname} | OS: ${hw.platform} (${hw.osRelease}) | IPv4: ${hw.networkIp}\n` +
     `- CPU: ${hw.cpuModel} (${hw.cpuCores} Logical Cores, Current Load: ${hw.cpuUsagePercent}%)\n` +
+    gpuLine +
     `- Memory: ${hw.memoryUsedGb} GB used / ${hw.memoryTotalGb} GB total (${hw.memoryUsagePercent}% used, ${hw.memoryFreeGb} GB free)\n` +
     `- System Uptime: ${hw.uptimeFormatted} | Mark LXXXV Arc Reactor Output: ${hw.arcReactorOutputPercent}%`;
 
@@ -603,10 +608,15 @@ export async function streamJarvisResponse(params, sendEvent) {
   const vaultState = await getVaultState();
   const vaultContext = formatVaultContextForPrompt(vaultState);
   const hw = getSystemTelemetry();
+  const gpuLine =
+    hw.gpu && hw.gpu.available
+      ? `- GPU: ${hw.gpu.name} (VRAM: ${hw.gpu.memoryUsedGb} GB / ${hw.gpu.memoryTotalGb} GB [${hw.gpu.memoryUsagePercent}%], Core Util: ${hw.gpu.utilizationPercent}%, Temp: ${hw.gpu.temperatureC}°C)\n`
+      : '';
   const hwContext =
     `[REAL-TIME HOST HARDWARE TELEMETRY]:\n` +
     `- Hostname: ${hw.hostname} | OS: ${hw.platform} (${hw.osRelease}) | IPv4: ${hw.networkIp}\n` +
     `- CPU: ${hw.cpuModel} (${hw.cpuCores} Logical Cores, Current Load: ${hw.cpuUsagePercent}%)\n` +
+    gpuLine +
     `- Memory: ${hw.memoryUsedGb} GB used / ${hw.memoryTotalGb} GB total (${hw.memoryUsagePercent}% used)\n` +
     `- Uptime: ${hw.uptimeFormatted} | Arc Reactor Output: ${hw.arcReactorOutputPercent}%`;
 

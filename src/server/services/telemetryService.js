@@ -1,13 +1,19 @@
 import os from 'node:os';
+import { execFile, execFileSync } from 'node:child_process';
+
+const NVIDIA_SMI_ARGS = [
+  '--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu',
+  '--format=csv,noheader,nounits'
+];
 
 /**
- * Computes average CPU utilization percentage across all logical cores.
- * @returns {number} CPU usage percentage (0-100)
+ * Reads cumulative idle and total CPU ticks across all logical cores.
+ * @returns {{ idle: number, total: number }}
  */
-export function getCpuUsagePercent() {
+function readCpuSnapshot() {
   const cpus = os.cpus();
   if (!cpus || cpus.length === 0) {
-    return 0;
+    return { idle: 0, total: 0 };
   }
 
   let totalIdle = 0;
@@ -20,12 +26,171 @@ export function getCpuUsagePercent() {
     totalIdle += cpu.times.idle;
   }
 
-  if (totalTick === 0) {
-    return 0;
+  return { idle: totalIdle, total: totalTick };
+}
+
+let prevCpuSnapshot = readCpuSnapshot();
+let cachedCpuUsagePercent =
+  prevCpuSnapshot.total > 0
+    ? Math.max(0, Math.min(100, Math.round((1 - prevCpuSnapshot.idle / prevCpuSnapshot.total) * 100)))
+    : 0;
+
+/**
+ * Updates the real-time CPU usage delta against the previous tick snapshot.
+ * @returns {number} Real-time CPU usage percentage (0-100)
+ */
+export function getCpuUsagePercent() {
+  const current = readCpuSnapshot();
+  const deltaIdle = current.idle - prevCpuSnapshot.idle;
+  const deltaTotal = current.total - prevCpuSnapshot.total;
+
+  if (deltaTotal > 0) {
+    const busyRatio = 1 - deltaIdle / deltaTotal;
+    cachedCpuUsagePercent = Math.max(0, Math.min(100, Math.round(busyRatio * 100)));
+    prevCpuSnapshot = current;
   }
 
-  const idleRatio = totalIdle / totalTick;
-  return Math.max(0, Math.min(100, Math.round((1 - idleRatio) * 100)));
+  return cachedCpuUsagePercent;
+}
+
+// Background sampler so every telemetry poll reflects a fresh 1.5s window
+const cpuSampleTimer = setInterval(() => {
+  getCpuUsagePercent();
+}, 1500);
+if (typeof cpuSampleTimer.unref === 'function') {
+  cpuSampleTimer.unref();
+}
+
+/**
+ * Parses raw `nvidia-smi` CSV output into structured GPU telemetry.
+ * @param {string} csvOutput
+ * @returns {{
+ *   available: boolean,
+ *   name: string,
+ *   memoryUsedMb: number,
+ *   memoryTotalMb: number,
+ *   memoryUsedGb: number,
+ *   memoryTotalGb: number,
+ *   memoryUsagePercent: number,
+ *   utilizationPercent: number,
+ *   temperatureC: number
+ * } | null}
+ */
+export function parseNvidiaSmiCsv(csvOutput) {
+  if (!csvOutput || typeof csvOutput !== 'string') {
+    return null;
+  }
+
+  const firstLine = csvOutput
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+
+  if (!firstLine) {
+    return null;
+  }
+
+  const parts = firstLine.split(',').map((part) => part.trim());
+  if (parts.length < 3) {
+    return null;
+  }
+
+  const name = parts[0];
+  const memoryUsedMb = Number(parts[1]);
+  const memoryTotalMb = Number(parts[2]);
+  const utilizationPercent = Number(parts[3]) || 0;
+  const temperatureC = Number(parts[4]) || 0;
+
+  if (!name || Number.isNaN(memoryUsedMb) || Number.isNaN(memoryTotalMb) || memoryTotalMb <= 0) {
+    return null;
+  }
+
+  const memoryUsagePercent = Math.max(
+    0,
+    Math.min(100, Math.round((memoryUsedMb / memoryTotalMb) * 100))
+  );
+
+  return {
+    available: true,
+    name,
+    memoryUsedMb,
+    memoryTotalMb,
+    memoryUsedGb: Number((memoryUsedMb / 1024).toFixed(2)),
+    memoryTotalGb: Number((memoryTotalMb / 1024).toFixed(1)),
+    memoryUsagePercent,
+    utilizationPercent: Math.max(0, Math.min(100, Math.round(utilizationPercent))),
+    temperatureC: Math.max(0, Math.round(temperatureC))
+  };
+}
+
+/** @type {ReturnType<typeof parseNvidiaSmiCsv>} */
+let cachedNvidiaGpu = null;
+let nvidiaBinaryMissing = false;
+let lastGpuCheckMs = 0;
+let gpuRefreshInFlight = false;
+
+/**
+ * Refreshes cached NVIDIA GPU metrics asynchronously in the background.
+ */
+function refreshNvidiaGpuAsync() {
+  if (nvidiaBinaryMissing || gpuRefreshInFlight) {
+    return;
+  }
+  gpuRefreshInFlight = true;
+  execFile(
+    'nvidia-smi',
+    NVIDIA_SMI_ARGS,
+    { timeout: 1500, windowsHide: true },
+    (err, stdout) => {
+      gpuRefreshInFlight = false;
+      lastGpuCheckMs = Date.now();
+      if (err) {
+        if (/** @type {NodeJS.ErrnoException} */ (err).code === 'ENOENT') {
+          nvidiaBinaryMissing = true;
+        }
+        return;
+      }
+      const parsed = parseNvidiaSmiCsv(stdout);
+      if (parsed) {
+        cachedNvidiaGpu = parsed;
+      }
+    }
+  );
+}
+
+/**
+ * Returns NVIDIA GPU telemetry if an NVIDIA GPU is present on the host.
+ * @returns {ReturnType<typeof parseNvidiaSmiCsv>}
+ */
+export function getNvidiaGpuTelemetry() {
+  if (nvidiaBinaryMissing) {
+    return null;
+  }
+
+  const now = Date.now();
+  if (cachedNvidiaGpu === null && lastGpuCheckMs === 0) {
+    lastGpuCheckMs = now;
+    try {
+      const stdout = execFileSync('nvidia-smi', NVIDIA_SMI_ARGS, {
+        timeout: 1200,
+        windowsHide: true,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore']
+      });
+      cachedNvidiaGpu = parseNvidiaSmiCsv(stdout);
+    } catch (err) {
+      if (err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT') {
+        nvidiaBinaryMissing = true;
+      }
+    }
+    return cachedNvidiaGpu;
+  }
+
+  if (now - lastGpuCheckMs >= 2000) {
+    refreshNvidiaGpuAsync();
+  }
+
+  return cachedNvidiaGpu;
 }
 
 /**
@@ -56,6 +221,7 @@ export function getSystemTelemetry() {
   const uptimeSeconds = Math.floor(os.uptime());
   const hours = Math.floor(uptimeSeconds / 3600);
   const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+  const gpu = getNvidiaGpuTelemetry();
 
   return {
     timestamp: new Date().toISOString(),
@@ -70,6 +236,7 @@ export function getSystemTelemetry() {
     memoryUsedGb: Number((usedMem / (1024 ** 3)).toFixed(1)),
     memoryFreeGb: Number((freeMem / (1024 ** 3)).toFixed(1)),
     memoryUsagePercent: memUsagePercent,
+    gpu,
     uptimeSeconds,
     uptimeFormatted: `${hours}h ${minutes}m`,
     arcReactorOutputPercent: Number((98.4 + Math.sin(Date.now() / 5000) * 1.2).toFixed(1)),
