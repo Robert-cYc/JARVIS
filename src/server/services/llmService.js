@@ -179,6 +179,7 @@ export async function generateJarvisResponse({
 
   try {
     let reply = '';
+    const normalizedModel = String(model || 'llama3.2').replace(/\s+/g, '');
 
     if (provider === 'ollama') {
       const ollamaUrl = (baseUrl || DEFAULT_OLLAMA_URL).replace(/\/+$/, '');
@@ -186,7 +187,7 @@ export async function generateJarvisResponse({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model,
+          model: normalizedModel,
           stream: false,
           messages: [{ role: 'system', content: systemPrompt }, ...normalizedHistory]
         })
@@ -194,7 +195,7 @@ export async function generateJarvisResponse({
 
       if (!response.ok) {
         const errBody = await response.text();
-        throw new Error(`Ollama (${model}): ${errBody || response.statusText}`);
+        throw new Error(`Ollama (${normalizedModel}): ${errBody || response.statusText}`);
       }
 
       const data = await response.json();

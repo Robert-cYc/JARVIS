@@ -514,9 +514,14 @@ class JarvisHudController {
   }
 
   async handlePullOllamaModel() {
-    const modelToPull =
+    const rawModel =
       this.dom.customModelInput.value.trim() || this.dom.pullModelSelect.value;
+    const modelToPull = rawModel.replace(/\s+/g, '');
     if (!modelToPull) return;
+
+    if (this.dom.customModelInput.value.trim()) {
+      this.dom.customModelInput.value = modelToPull;
+    }
 
     this.dom.pullModelBtn.disabled = true;
     this.dom.pullProgressBox.classList.remove('hidden');
@@ -552,21 +557,25 @@ class JarvisHudController {
 
         for (const line of lines) {
           if (!line.trim()) continue;
+          let evt;
           try {
-            const evt = JSON.parse(line);
-            if (evt.status) {
-              this.dom.pullStatusText.textContent = evt.status.toUpperCase();
-            }
-            if (evt.completed && evt.total) {
-              const pct = Math.min(
-                100,
-                Math.round((evt.completed / evt.total) * 100)
-              );
-              this.dom.pullPercentText.textContent = `${pct}%`;
-              this.dom.pullProgressBar.style.width = `${pct}%`;
-            }
+            evt = JSON.parse(line);
           } catch {
-            // Ignore partial JSON lines
+            continue;
+          }
+          if (evt.error) {
+            throw new Error(evt.error);
+          }
+          if (evt.status) {
+            this.dom.pullStatusText.textContent = evt.status.toUpperCase();
+          }
+          if (evt.completed && evt.total) {
+            const pct = Math.min(
+              100,
+              Math.round((evt.completed / evt.total) * 100)
+            );
+            this.dom.pullPercentText.textContent = `${pct}%`;
+            this.dom.pullProgressBar.style.width = `${pct}%`;
           }
         }
       }

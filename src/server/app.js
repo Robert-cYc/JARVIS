@@ -58,8 +58,18 @@ function sendJson(res, statusCode, payload) {
  * @returns {http.Server}
  */
 export function createServer() {
-  return http.createServer(async (req, res) => {
+  const server = http.createServer(async (req, res) => {
     try {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
       const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
       const pathname = parsedUrl.pathname;
 
@@ -112,6 +122,9 @@ export function createServer() {
       }
 
       if (req.method === 'POST' && pathname === '/api/ollama/pull') {
+        req.socket.setTimeout(0);
+        res.setTimeout(0);
+
         const body = await readJsonBody(req);
         const { model, baseUrl } = body;
 
@@ -120,6 +133,7 @@ export function createServer() {
           return;
         }
 
+        const normalizedModel = model.replace(/\s+/g, '');
         const ollamaUrl = (
           baseUrl ||
           process.env.OLLAMA_BASE_URL ||
@@ -129,7 +143,7 @@ export function createServer() {
         const upstream = await fetch(`${ollamaUrl}/api/pull`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: model.trim(), stream: true })
+          body: JSON.stringify({ name: normalizedModel, stream: true })
         });
 
         if (!upstream.ok || !upstream.body) {
@@ -142,7 +156,9 @@ export function createServer() {
 
         res.writeHead(200, {
           'Content-Type': 'application/x-ndjson; charset=utf-8',
-          'Transfer-Encoding': 'chunked'
+          'Transfer-Encoding': 'chunked',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive'
         });
 
         const reader = upstream.body.getReader();
@@ -214,4 +230,9 @@ export function createServer() {
       });
     }
   });
+
+  server.requestTimeout = 0;
+  server.headersTimeout = 0;
+  server.keepAliveTimeout = 0;
+  return server;
 }
