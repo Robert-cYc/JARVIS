@@ -132,6 +132,13 @@ describe('J.A.R.V.I.S. Web Skills & News Service', () => {
     assert.ok(localAppsZh);
     assert.equal(localAppsZh.type, 'local_app');
     assert.equal(localAppsZh.apps.length, 2);
+
+    const solarCmd = detectLauncherCommand('JARVIS，請啟動 3D 太陽系全息模擬系統 (SolarSystem)。');
+    assert.ok(solarCmd);
+    assert.equal(solarCmd.executed, true);
+    assert.equal(solarCmd.type, 'local_app');
+    assert.ok(solarCmd.apps.some((a) => a.appId === 'solarsystem'));
+    assert.equal(solarCmd.url, '/solarSystem/index.html');
   });
 
   it('parses Bank of Taiwan (BOT) Gold Passbook HTML rates accurately', () => {

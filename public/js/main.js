@@ -589,6 +589,13 @@ class JarvisHudController {
 
     document.querySelectorAll('[data-prompt]').forEach((btn) => {
       btn.addEventListener('click', () => {
+        const launchUrl = btn.getAttribute('data-launch-url');
+        if (launchUrl) {
+          window.open(launchUrl, '_blank', 'noopener,noreferrer');
+          if (btn.id === 'launchSolarSystemBtn') {
+            fetch('/api/launch/solar-system', { method: 'POST' }).catch(() => {});
+          }
+        }
         const prompt = btn.getAttribute('data-prompt');
         if (prompt) {
           this.handleSendMessage(prompt);
@@ -1491,6 +1498,15 @@ class JarvisHudController {
         title: '⏱️ Start 10-Minute Tactical Countdown Timer (啟動 10 分鐘戰術倒數計時)',
         tag: 'TIMER',
         action: () => this.startTacticalTimer(600)
+      },
+      {
+        title: '🪐 SolarSystem(太陽系) // 3D Planetary Simulation (啟動太陽系)',
+        tag: 'SIMULATION',
+        action: () => {
+          window.open('/solarSystem/index.html', '_blank', 'noopener,noreferrer');
+          fetch('/api/launch/solar-system', { method: 'POST' }).catch(() => {});
+          this.handleSendMessage('JARVIS，請啟動 3D 太陽系全息模擬系統 (SolarSystem)。');
+        }
       },
       {
         title: '🎯 Toggle Focus Layout — Hide Side Panels (切換專注版面 Ctrl+Shift+F)',

@@ -2,6 +2,7 @@
  * Stark Industries Global Satellite Uplink — Web Surfing, Live News & Intelligence Skills
  */
 
+import path from 'node:path';
 import { spawn } from 'node:child_process';
 import {
   runCyberSecurityScan,
@@ -1521,6 +1522,17 @@ const LOCAL_APP_CATALOG = [
     winCmd: 'snippingtool.exe',
     macApp: 'Screenshot',
     linuxCmd: 'gnome-screenshot'
+  },
+  {
+    appId: 'solarsystem',
+    label: 'SolarSystem(太陽系)',
+    pattern: /\bsolar\s*system\b|太陽系|行星軌道|全息天文/i,
+    winCmd: 'cmd.exe',
+    winArgs: ['/c', 'start', '', path.resolve(process.cwd(), 'solarSystem/index.html')],
+    macApp: 'Safari',
+    macArgs: [path.resolve(process.cwd(), 'solarSystem/index.html')],
+    linuxCmd: 'xdg-open',
+    linuxArgs: [path.resolve(process.cwd(), 'solarSystem/index.html')]
   }
 ];
 
@@ -1566,16 +1578,19 @@ export function detectLauncherCommand(userMessage) {
     // 3a. Check allowlisted local desktop OS applications (supports launching multiple apps at once)
     const matchedLocalApps = LOCAL_APP_CATALOG.filter((app) => app.pattern.test(text));
     if (matchedLocalApps.length > 0) {
+      const solarApp = matchedLocalApps.find((a) => a.appId === 'solarsystem');
       return {
         executed: true,
         type: 'local_app',
         label: matchedLocalApps.map((a) => a.label).join(' + '),
+        url: solarApp ? '/solarSystem/index.html' : undefined,
         apps: matchedLocalApps.map((a) => ({ appId: a.appId, label: a.label }))
       };
     }
 
     // 3b. Check web targets
     const targets = [
+      { pattern: /solar\s*system|太陽系|行星/i, label: 'SolarSystem(太陽系) // 3D Planetary Simulation', url: '/solarSystem/index.html' },
       { pattern: /youtube/i, label: 'YouTube', url: 'https://www.youtube.com' },
       { pattern: /github/i, label: 'GitHub', url: 'https://github.com' },
       { pattern: /gmail|信箱|郵件/i, label: 'Gmail', url: 'https://mail.google.com' },
@@ -1618,14 +1633,16 @@ export function executeLocalAppLaunch(launchAction) {
         child.on('error', () => {});
         child.unref();
       } else if (process.platform === 'darwin') {
-        const child = spawn('open', ['-a', spec.macApp], {
+        const macArgs = spec.macArgs || ['-a', spec.macApp];
+        const child = spawn('open', macArgs, {
           detached: true,
           stdio: 'ignore'
         });
         child.on('error', () => {});
         child.unref();
       } else {
-        const child = spawn(spec.linuxCmd, [], {
+        const linuxArgs = spec.linuxArgs || [];
+        const child = spawn(spec.linuxCmd, linuxArgs, {
           detached: true,
           stdio: 'ignore'
         });

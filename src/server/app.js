@@ -1,6 +1,7 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { getSystemTelemetry } from './services/telemetryService.js';
 import {
@@ -55,6 +56,7 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PUBLIC_DIR = path.resolve(__dirname, '../../public');
+const SOLAR_DIR = path.resolve(__dirname, '../../solarSystem');
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -63,7 +65,15 @@ const MIME_TYPES = {
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
-  '.ico': 'image/x-icon'
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.glb': 'model/gltf-binary',
+  '.gltf': 'model/gltf+json',
+  '.wasm': 'application/wasm',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav'
 };
 
 /**
@@ -511,6 +521,65 @@ export function createServer() {
         });
 
         sendJson(res, 200, result);
+        return;
+      }
+
+      // Launch SolarSystem application directly on host OS
+      if (req.method === 'POST' && pathname === '/api/launch/solar-system') {
+        const solarIndexPath = path.join(SOLAR_DIR, 'index.html');
+        let launched = false;
+        try {
+          if (process.platform === 'win32') {
+            const child = spawn('cmd.exe', ['/c', 'start', '', solarIndexPath], {
+              detached: true,
+              stdio: 'ignore'
+            });
+            child.on('error', () => {});
+            child.unref();
+            launched = true;
+          } else if (process.platform === 'darwin') {
+            const child = spawn('open', [solarIndexPath], { detached: true, stdio: 'ignore' });
+            child.on('error', () => {});
+            child.unref();
+            launched = true;
+          } else {
+            const child = spawn('xdg-open', [solarIndexPath], { detached: true, stdio: 'ignore' });
+            child.on('error', () => {});
+            child.unref();
+            launched = true;
+          }
+        } catch {
+          launched = false;
+        }
+
+        sendJson(res, 200, {
+          success: true,
+          launched,
+          filePath: solarIndexPath,
+          webUrl: '/solarSystem/index.html'
+        });
+        return;
+      }
+
+      // Serve SolarSystem application files
+      if (pathname === '/solarSystem' || pathname.startsWith('/solarSystem/')) {
+        const relSolar = pathname === '/solarSystem' || pathname === '/solarSystem/'
+          ? 'index.html'
+          : pathname.replace(/^\/solarSystem\/?/, '') || 'index.html';
+        const safeSolar = path.normalize(relSolar).replace(/^(\.\.(\/|\\|$))+/, '');
+        const fullSolar = path.join(SOLAR_DIR, safeSolar);
+
+        if (!fullSolar.startsWith(SOLAR_DIR)) {
+          sendJson(res, 403, { error: 'Access denied by Stark Firewall.' });
+          return;
+        }
+
+        const fileBuffer = await fs.readFile(fullSolar);
+        const ext = path.extname(fullSolar).toLowerCase();
+        res.writeHead(200, {
+          'Content-Type': MIME_TYPES[ext] || 'application/octet-stream'
+        });
+        res.end(fileBuffer);
         return;
       }
 

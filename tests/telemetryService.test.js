@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {
   getCpuUsagePercent,
   getSystemTelemetry,
-  parseNvidiaSmiCsv
+  parseNvidiaSmiCsv,
+  resolveNvidiaSmiBinary
 } from '../src/server/services/telemetryService.js';
 
 describe('J.A.R.V.I.S. Telemetry Service', () => {
@@ -27,6 +28,12 @@ describe('J.A.R.V.I.S. Telemetry Service', () => {
     assert.equal(gpu.utilizationPercent, 35);
     assert.equal(gpu.temperatureC, 54);
     assert.equal(parseNvidiaSmiCsv(''), null);
+  });
+
+  it('resolves a valid binary path or command name for nvidia-smi', () => {
+    const bin = resolveNvidiaSmiBinary();
+    assert.equal(typeof bin, 'string');
+    assert.ok(bin.length > 0);
   });
 
   it('returns complete Mark LXXXV system telemetry metrics', () => {

@@ -1,4 +1,6 @@
 import os from 'node:os';
+import fs from 'node:fs';
+import path from 'node:path';
 import { execFile, execFileSync } from 'node:child_process';
 
 const NVIDIA_SMI_ARGS = [
@@ -123,9 +125,31 @@ export function parseNvidiaSmiCsv(csvOutput) {
   };
 }
 
+/**
+ * Resolves the absolute path or command for nvidia-smi.
+ * Prioritizes standard Windows system paths if present.
+ * @returns {string}
+ */
+export function resolveNvidiaSmiBinary() {
+  if (process.platform === 'win32') {
+    const candidates = [
+      path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'nvidia-smi.exe'),
+      path.join(process.env['ProgramFiles'] || 'C:\\Program Files', 'NVIDIA Corporation', 'NVSMI', 'nvidia-smi.exe'),
+      'nvidia-smi.exe'
+    ];
+    for (const c of candidates) {
+      if (c.includes('\\') && fs.existsSync(c)) {
+        return c;
+      }
+    }
+  }
+  return 'nvidia-smi';
+}
+
 /** @type {ReturnType<typeof parseNvidiaSmiCsv>} */
 let cachedNvidiaGpu = null;
 let nvidiaBinaryMissing = false;
+let missingCheckedAtMs = 0;
 let lastGpuCheckMs = 0;
 let gpuRefreshInFlight = false;
 
@@ -133,23 +157,31 @@ let gpuRefreshInFlight = false;
  * Refreshes cached NVIDIA GPU metrics asynchronously in the background.
  */
 function refreshNvidiaGpuAsync() {
-  if (nvidiaBinaryMissing || gpuRefreshInFlight) {
+  if (gpuRefreshInFlight) {
     return;
   }
+  const now = Date.now();
+  if (nvidiaBinaryMissing && now - missingCheckedAtMs < 30000) {
+    return;
+  }
+
   gpuRefreshInFlight = true;
+  const bin = resolveNvidiaSmiBinary();
   execFile(
-    'nvidia-smi',
+    bin,
     NVIDIA_SMI_ARGS,
-    { timeout: 1500, windowsHide: true },
+    { timeout: 4000, windowsHide: true },
     (err, stdout) => {
       gpuRefreshInFlight = false;
       lastGpuCheckMs = Date.now();
       if (err) {
         if (/** @type {NodeJS.ErrnoException} */ (err).code === 'ENOENT') {
           nvidiaBinaryMissing = true;
+          missingCheckedAtMs = Date.now();
         }
         return;
       }
+      nvidiaBinaryMissing = false;
       const parsed = parseNvidiaSmiCsv(stdout);
       if (parsed) {
         cachedNvidiaGpu = parsed;
@@ -163,24 +195,29 @@ function refreshNvidiaGpuAsync() {
  * @returns {ReturnType<typeof parseNvidiaSmiCsv>}
  */
 export function getNvidiaGpuTelemetry() {
-  if (nvidiaBinaryMissing) {
-    return null;
+  const now = Date.now();
+  if (nvidiaBinaryMissing && now - missingCheckedAtMs < 30000) {
+    return cachedNvidiaGpu;
   }
 
-  const now = Date.now();
   if (cachedNvidiaGpu === null && lastGpuCheckMs === 0) {
     lastGpuCheckMs = now;
+    const bin = resolveNvidiaSmiBinary();
     try {
-      const stdout = execFileSync('nvidia-smi', NVIDIA_SMI_ARGS, {
-        timeout: 1200,
+      const stdout = execFileSync(bin, NVIDIA_SMI_ARGS, {
+        timeout: 4000,
         windowsHide: true,
         encoding: 'utf-8',
         stdio: ['ignore', 'pipe', 'ignore']
       });
       cachedNvidiaGpu = parseNvidiaSmiCsv(stdout);
+      if (cachedNvidiaGpu) {
+        nvidiaBinaryMissing = false;
+      }
     } catch (err) {
       if (err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT') {
         nvidiaBinaryMissing = true;
+        missingCheckedAtMs = Date.now();
       }
     }
     return cachedNvidiaGpu;
