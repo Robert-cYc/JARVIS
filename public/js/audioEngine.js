@@ -17,6 +17,7 @@ export class JarvisAudioEngine {
     this.resonanceNodes = null;
     this.ambientHumEnabled = false;
     this.ambientNodes = null;
+    this.speechMuted = false;
     this.onSpeakingStateChange = null;
 
     if (this.synth) {
@@ -312,14 +313,34 @@ export class JarvisAudioEngine {
   }
 
   stopSpeaking() {
+    this.speechMuted = true;
     if (this.synth) {
-      this.synth.cancel();
+      try {
+        this.synth.cancel();
+        if (this.synth.paused) {
+          this.synth.resume();
+        }
+        this.synth.cancel();
+      } catch {
+        // Ignore synthesis cancel error
+      }
     }
     this.isSpeaking = false;
     this.speechEnergy = 0;
     this._setVocalResonanceCarrier(false);
     if (this.onSpeakingStateChange) {
       this.onSpeakingStateChange(false);
+    }
+  }
+
+  /**
+   * Universal Master Mute: halts active speech, cancels queued streaming utterances,
+   * stops ambient reactor hum, and clears audio resonance.
+   */
+  muteAll() {
+    this.stopSpeaking();
+    if (this.ambientHumEnabled || this.ambientNodes) {
+      this.setAmbientHum(false);
     }
   }
 
@@ -331,6 +352,7 @@ export class JarvisAudioEngine {
     if (!this.voiceEnabled || !this.synth || !rawText) return;
 
     this.stopSpeaking();
+    this.speechMuted = false;
 
     const segments = rawText
       .split(/(?<=[.!?。！？\n])\s+/)
@@ -394,7 +416,7 @@ export class JarvisAudioEngine {
    * @param {string} segmentText
    */
   enqueueSpeechSegment(segmentText) {
-    if (!this.voiceEnabled || !this.synth || !segmentText) return;
+    if (!this.voiceEnabled || !this.synth || !segmentText || this.speechMuted) return;
     const clean = segmentText
       .replace(/```[\s\S]*?```/g, ' ')
       .replace(/[*#`_~]/g, '')
@@ -538,19 +560,23 @@ export class JarvisAudioEngine {
     }
 
     if (!this.ambientHumEnabled && this.ambientNodes) {
+      const nodes = this.ambientNodes;
+      this.ambientNodes = null;
       try {
         const now = ctx.currentTime;
-        const { noiseNode, droneSub, droneCore, droneHarmonic, masterGain } = this.ambientNodes;
-        masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-        masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
-        noiseNode.stop(now + 0.45);
-        droneSub.stop(now + 0.45);
-        if (droneCore) droneCore.stop(now + 0.45);
-        droneHarmonic.stop(now + 0.45);
+        nodes.masterGain.gain.cancelScheduledValues(now);
+        nodes.masterGain.gain.setValueAtTime(nodes.masterGain.gain.value, now);
+        nodes.masterGain.gain.linearRampToValueAtTime(0, now + 0.12);
       } catch {
-        // Ignore stop errors
+        // Ignore ramp error
       }
-      this.ambientNodes = null;
+      setTimeout(() => {
+        try { nodes.noiseNode.stop(); } catch {}
+        try { nodes.droneSub.stop(); } catch {}
+        if (nodes.droneCore) try { nodes.droneCore.stop(); } catch {}
+        try { nodes.droneHarmonic.stop(); } catch {}
+        try { nodes.masterGain.disconnect(); } catch {}
+      }, 150);
     }
 
     return this.ambientHumEnabled;

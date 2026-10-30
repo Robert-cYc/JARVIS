@@ -493,8 +493,11 @@ class JarvisHudController {
     });
 
     this.dom.stopVoiceBtn.addEventListener('click', () => {
-      this.audio.stopSpeaking();
-      this.audio.playHudClick(1200);
+      this.audio.muteAll();
+      if (this.dom.toggleAmbientHumBtn) {
+        this._updateToggleChip(this.dom.toggleAmbientHumBtn, false);
+      }
+      this._saveSettings();
     });
 
     this.dom.personaSelect.addEventListener('change', () => {
@@ -2159,6 +2162,7 @@ class JarvisHudController {
     this.clearPendingPayload();
 
     this.audio.stopSpeaking();
+    this.audio.speechMuted = false;
     this.audio.playTelemetryChirp();
 
     let displayUserText = userText;
@@ -2272,7 +2276,7 @@ class JarvisHudController {
             if (sentenceMatch) {
               const readySentence = sentenceMatch[1].trim();
               unspokenBuffer = sentenceMatch[2];
-              if (readySentence.length > 2) {
+              if (readySentence.length > 2 && !this.audio.speechMuted) {
                 this.audio.enqueueSpeechSegment(readySentence);
               }
             }
@@ -2283,7 +2287,7 @@ class JarvisHudController {
       }
 
       // Speak remaining unspoken buffer
-      if (unspokenBuffer.trim().length > 0) {
+      if (unspokenBuffer.trim().length > 0 && !this.audio.speechMuted) {
         this.audio.enqueueSpeechSegment(unspokenBuffer.trim());
       }
 
