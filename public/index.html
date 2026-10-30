@@ -59,6 +59,14 @@
             <strong id="hudClock">--:--:--</strong>
           </div>
           <button
+            id="focusLayoutBtn"
+            type="button"
+            class="hud-btn"
+            title="Focus Layout — hide both side panels (Ctrl+Shift+F)"
+          >
+            🎯 FOCUS
+          </button>
+          <button
             id="cmdPaletteBtn"
             type="button"
             class="hud-btn amber"
@@ -85,7 +93,7 @@
         <!-- LEFT PANEL: LLM LOADER & SYSTEM DIAGNOSTICS -->
         <aside class="hud-panel">
           <!-- NEURAL CORE MATRIX -->
-          <section class="panel-section">
+          <section class="panel-section collapsible" data-section-id="01">
             <div class="section-header">
               <span class="section-title">01 // NEURAL CORE MATRIX</span>
               <span id="ollamaConnBadge" class="section-badge">SCANNING</span>
@@ -158,7 +166,7 @@
           </section>
 
           <!-- OLLAMA ONE-CLICK MODEL DEPLOYER -->
-          <section id="ollamaPullSection" class="panel-section">
+          <section id="ollamaPullSection" class="panel-section collapsible" data-section-id="02">
             <div class="section-header">
               <span class="section-title">02 // OLLAMA CORE DEPLOYER</span>
               <span class="section-badge amber">LOCAL GGUF</span>
@@ -193,7 +201,7 @@
           </section>
 
           <!-- REAL-TIME HOST TELEMETRY -->
-          <section class="panel-section">
+          <section class="panel-section collapsible" data-section-id="03">
             <div class="section-header">
               <span class="section-title">03 // MAINFRAME TELEMETRY</span>
               <span id="hostPlatformBadge" class="section-badge">HOST</span>
@@ -248,7 +256,7 @@
           </section>
 
           <!-- STARK MEMORY VAULT, TO-DO & TACTICAL TIMER -->
-          <section class="panel-section">
+          <section class="panel-section collapsible" data-section-id="04">
             <div class="section-header">
               <span class="section-title">04 // MEMORY VAULT &amp; TIMER</span>
               <span id="timerDisplayBadge" class="section-badge amber">TIMER: 00:00</span>
@@ -280,13 +288,13 @@
               <label class="field-label">
                 <span>PERSISTENT TO-DO, MEMORY &amp; WATCHLIST VAULT</span>
               </label>
-              <div style="display: flex; gap: 5px">
-                <input
-                  id="vaultInput"
-                  type="text"
-                  class="hud-input"
-                  placeholder="Task, memory, or ticker (0050)..."
-                />
+              <input
+                id="vaultInput"
+                type="text"
+                class="hud-input"
+                placeholder="Task, memory, ticker (0050), or alert (0050 > 180)..."
+              />
+              <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px">
                 <button id="addTaskBtn" type="button" class="hud-btn" title="Add To-Do Task">
                   +TASK
                 </button>
@@ -295,6 +303,14 @@
                 </button>
                 <button id="addWatchlistBtn" type="button" class="hud-btn" title="Add Stock/ETF Ticker to Watchlist">
                   +STOCK
+                </button>
+                <button
+                  id="addAlertBtn"
+                  type="button"
+                  class="hud-btn amber"
+                  title='Price Alert, e.g. "0050 > 180", "黃金漲破 NT$16000", "NVDA 跌 3%"'
+                >
+                  +ALERT
                 </button>
               </div>
             </div>
@@ -519,7 +535,7 @@
           </section>
 
           <!-- SATELLITE WEB UPLINK & LIVE NEWS SKILLS -->
-          <section class="panel-section">
+          <section class="panel-section collapsible" data-section-id="07">
             <div class="section-header">
               <span class="section-title">07 // SATELLITE WEB UPLINK</span>
               <span class="section-badge amber">LIVE NET</span>
@@ -533,6 +549,14 @@
               <div id="toggleForceSearchBtn" class="toggle-chip" title="Force live web search on every query">
                 <span>FORCE SEARCH</span>
                 <strong>OFF</strong>
+              </div>
+              <div
+                id="toggleQuakeAlertBtn"
+                class="toggle-chip active"
+                title="Taiwan Earthquake Alerts via USGS (台灣地震即時警示, M4.5+)"
+              >
+                <span>QUAKE ALERT</span>
+                <strong>ON</strong>
               </div>
             </div>
 
@@ -551,6 +575,13 @@
                 data-prompt="JARVIS，請幫我查詢目前國際黃金金價 (GC=F) 的最新報價、近期 5 日漲勢表現與高低區間，並換算成台灣黃金每台錢與每盎司台幣參考價格。"
               >
                 &gt; 🥇 黃金金價漲勢與台灣每錢換算 (Live)
+              </button>
+              <button
+                type="button"
+                class="directive-btn"
+                data-prompt="JARVIS，請查詢台灣附近最近一週的地震紀錄 (USGS Seismic Telemetry)，有沒有規模大於 4.0 的有感地震？"
+              >
+                &gt; 🌋 台灣近期地震監測 (Live USGS)
               </button>
               <button
                 type="button"
@@ -591,7 +622,7 @@
           </section>
 
           <!-- TACTICAL QUICK DIRECTIVES & PROTOCOLS -->
-          <section class="panel-section">
+          <section class="panel-section collapsible" data-section-id="08">
             <div class="section-header">
               <span class="section-title">08 // R&amp;D, CYBER &amp; PROTOCOLS</span>
               <span class="section-badge">STARK LABS</span>
@@ -639,6 +670,13 @@
                 data-prompt="JARVIS，請啟動雙向同步口譯模式：將『我們已經完成量子反應爐的能源校準，隨時可以進行全球部署』翻譯成優雅的皇室英式英文與商務日文。"
               >
                 &gt; 🌐 萬國同步口譯官 (中/英/日商務翻譯)
+              </button>
+              <button
+                type="button"
+                class="directive-btn"
+                data-prompt="JARVIS，請幫我精準換算：3000 美金等於多少台幣？以及 250 磅等於幾公斤？"
+              >
+                &gt; 💱 即時匯率換算 &amp; 單位轉換 (Live FX)
               </button>
             </div>
 

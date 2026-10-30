@@ -318,6 +318,32 @@ body::after {
   display: none !important;
 }
 
+/* Focus Layout — hide both side panels, center console fills the HUD */
+body.focus-layout .hud-main {
+  grid-template-columns: 1fr;
+}
+
+body.focus-layout .hud-main > .hud-panel {
+  display: none;
+}
+
+#focusLayoutBtn.active {
+  border-color: var(--amber);
+  color: var(--amber);
+  box-shadow: 0 0 10px rgba(255, 170, 0, 0.35);
+}
+
+/* Price alert rows in Memory Vault */
+.vault-item.alert-item span {
+  color: var(--amber);
+}
+
+.vault-item.alert-item.triggered span {
+  color: var(--emerald);
+  text-decoration: line-through;
+  opacity: 0.8;
+}
+
 /* Form Controls */
 .field-group {
   display: flex;

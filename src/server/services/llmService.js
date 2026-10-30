@@ -13,6 +13,7 @@ import {
   formatVaultContextForPrompt
 } from './memoryVaultService.js';
 import { getSystemTelemetry } from './telemetryService.js';
+import { parseAlertCommand, addPriceAlert } from './alertService.js';
 
 const DEFAULT_OLLAMA_URL = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
 
@@ -71,7 +72,8 @@ export function buildJarvisSystemPrompt({
     'Formatting & Vocalization Rules:',
     '1. Your response will be spoken aloud via the HUD voice synthesizer AND displayed on the holographic console.',
     '2. Begin naturally in character (e.g., "Right away, Sir.", "At your service, Sir.", "先生，正在為您調閱數據。", "Indeed, Sir.") varied organically by context.',
-    '3. Keep explanations clear, structured, and natural when read aloud. Avoid excessive decorative symbols or raw URLs that sound jarring in Text-to-Speech.'
+    '3. Clear & Clean Typography: Do NOT output raw LaTeX math delimiters (such as \\[ \\], \\( \\), \\text{}, \\times). Format mathematical expressions, conversions, and values using clear, plain Unicode text (e.g. "3,000 USD × 32.6 = 97,800 TWD" or "250 lbs × 0.4536 = 113.4 kg").',
+    '4. Keep explanations clear, structured, and natural when read aloud. Avoid excessive decorative symbols or raw URLs that sound jarring in Text-to-Speech.'
   ].join('\n');
 }
 
@@ -240,6 +242,16 @@ export async function generateJarvisResponse({
       type: 'watchlist',
       item: { title: res.added.join(', ') || vaultCmd.payload, watchlist: res.watchlist }
     };
+  } else {
+    const alertSpec = parseAlertCommand(lastUserMessage);
+    if (alertSpec) {
+      try {
+        const alert = await addPriceAlert(alertSpec);
+        vaultActionExecuted = { type: 'price alert', item: { title: alert.label } };
+      } catch (error) {
+        console.warn(`[J.A.R.V.I.S. SENTINEL] Failed to create price alert: ${error.message}`);
+      }
+    }
   }
 
   const vaultState = await getVaultState();
@@ -635,6 +647,16 @@ export async function streamJarvisResponse(params, sendEvent) {
       type: 'watchlist',
       item: { title: res.added.join(', ') || vaultCmd.payload, watchlist: res.watchlist }
     };
+  } else {
+    const alertSpec = parseAlertCommand(lastUserMessage);
+    if (alertSpec) {
+      try {
+        const alert = await addPriceAlert(alertSpec);
+        vaultActionExecuted = { type: 'price alert', item: { title: alert.label } };
+      } catch (error) {
+        console.warn(`[J.A.R.V.I.S. SENTINEL] Failed to create price alert: ${error.message}`);
+      }
+    }
   }
 
   const vaultState = await getVaultState();

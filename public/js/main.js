@@ -18,6 +18,9 @@ class JarvisHudController {
     this.timerRemainingSeconds = 0;
     this.hourlyChimeEnabled = true;
     this.lastChimedHourKey = '';
+    this.focusLayout = false;
+    this.lastVaultState = { tasks: [], memories: [], watchlist: [] };
+    this.priceAlerts = [];
     this.modelCatalog = {
       ollama: { online: false, models: [] },
       cloudCatalog: {
@@ -51,6 +54,7 @@ class JarvisHudController {
     this.refreshModelsAndTelemetry();
     this.refreshVault();
     setInterval(() => this.refreshTelemetryOnly(), 2000);
+    setInterval(() => this.pollSentinelAlerts(), 30000);
 
     // Restore Persistent Chat History or Display Initial Boot Greeting
     if (!this._loadSavedChatHistory()) {
@@ -152,6 +156,9 @@ class JarvisHudController {
       addTaskBtn: document.getElementById('addTaskBtn'),
       addMemoryBtn: document.getElementById('addMemoryBtn'),
       addWatchlistBtn: document.getElementById('addWatchlistBtn'),
+      addAlertBtn: document.getElementById('addAlertBtn'),
+      toggleQuakeAlertBtn: document.getElementById('toggleQuakeAlertBtn'),
+      focusLayoutBtn: document.getElementById('focusLayoutBtn'),
       vaultListContainer: document.getElementById('vaultListContainer'),
 
       attachmentBanner: document.getElementById('attachmentBanner'),
@@ -315,6 +322,9 @@ class JarvisHudController {
           sec.classList.toggle('collapsed', cfg.collapsedSections.includes(secId));
         });
       }
+      if (typeof cfg.focusLayout === 'boolean') {
+        this.setFocusLayout(cfg.focusLayout, { silent: true, persist: false });
+      }
     } catch {
       // Ignore corrupt storage
     }
@@ -339,7 +349,8 @@ class JarvisHudController {
         pitch: this.audio.pitch,
         rate: this.audio.rate,
         hourlyChimeEnabled: this.hourlyChimeEnabled,
-        collapsedSections
+        collapsedSections,
+        focusLayout: this.focusLayout
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch {
@@ -583,9 +594,11 @@ class JarvisHudController {
       });
     });
 
-    // Collapsible Right-Panel Sections (05 // & 06 //)
+    // Collapsible HUD Panel Sections (01 // – 08 //)
     document.querySelectorAll('.panel-section.collapsible > .section-header').forEach((header) => {
-      header.addEventListener('click', () => {
+      header.title = header.title || 'Click to expand or collapse (點擊展開或收合)';
+      header.addEventListener('click', (e) => {
+        if (e.target.closest('button, select, input, a')) return;
         const section = header.closest('.panel-section.collapsible');
         if (!section) return;
         section.classList.toggle('collapsed');
@@ -593,6 +606,21 @@ class JarvisHudController {
         this._saveSettings();
       });
     });
+
+    // Focus Layout (hide both side panels)
+    if (this.dom.focusLayoutBtn) {
+      this.dom.focusLayoutBtn.addEventListener('click', () => {
+        this.setFocusLayout(!this.focusLayout);
+      });
+    }
+
+    // Stark Sentinel: price alerts & earthquake alert toggle
+    if (this.dom.addAlertBtn) {
+      this.dom.addAlertBtn.addEventListener('click', () => this.handleAddPriceAlert());
+    }
+    if (this.dom.toggleQuakeAlertBtn) {
+      this.dom.toggleQuakeAlertBtn.addEventListener('click', () => this.handleToggleQuakeAlerts());
+    }
 
     // Tactical Voice Countdown Timer
     document.querySelectorAll('.timer-preset-btn').forEach((btn) => {
@@ -676,6 +704,11 @@ class JarvisHudController {
     }
 
     window.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        this.setFocusLayout(!this.focusLayout);
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         if (this.dom.commandPaletteModal?.classList.contains('hidden')) {
@@ -722,6 +755,153 @@ class JarvisHudController {
     const strong = el.querySelector('strong');
     if (strong) strong.textContent = active ? 'ON' : 'OFF';
     this.audio.playHudClick();
+  }
+
+  /**
+   * Toggles the focus layout, hiding both side panels.
+   * @param {boolean} active
+   * @param {{silent?: boolean, persist?: boolean}} [options]
+   */
+  setFocusLayout(active, { silent = false, persist = true } = {}) {
+    this.focusLayout = Boolean(active);
+    document.body.classList.toggle('focus-layout', this.focusLayout);
+    if (this.dom.focusLayoutBtn) {
+      this.dom.focusLayoutBtn.classList.toggle('active', this.focusLayout);
+      this.dom.focusLayoutBtn.textContent = this.focusLayout ? '🎯 FOCUS: ON' : '🎯 FOCUS';
+    }
+    if (!silent) this.audio.playHudClick(this.focusLayout ? 2100 : 1500);
+    if (persist) this._saveSettings();
+  }
+
+  /**
+   * Collapses or expands every collapsible HUD panel section.
+   * @param {boolean} collapsed
+   */
+  setAllSectionsCollapsed(collapsed) {
+    document.querySelectorAll('.panel-section.collapsible').forEach((sec) => {
+      sec.classList.toggle('collapsed', collapsed);
+    });
+    this.audio.playHudClick(collapsed ? 1450 : 1950);
+    this._saveSettings();
+  }
+
+  /** Requests browser notification permission (no-op if unsupported or already decided). */
+  _ensureNotificationPermission() {
+    if (!('Notification' in window) || Notification.permission !== 'default') return;
+    Notification.requestPermission().catch((err) => {
+      console.warn('[J.A.R.V.I.S.] Notification permission request failed:', err);
+    });
+  }
+
+  async handleAddPriceAlert() {
+    const val = this.dom.vaultInput?.value.trim();
+    if (!val) {
+      this.dom.reactorStateBanner.textContent =
+        'SENTINEL // ENTER ALERT e.g. "0050 > 180" OR "黃金漲破 NT$16000"';
+      return;
+    }
+    this._ensureNotificationPermission();
+    this.audio.playHudClick(2050);
+    try {
+      const res = await fetch('/api/alerts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: val })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      this.dom.vaultInput.value = '';
+      this.dom.reactorStateBanner.textContent = `SENTINEL ARMED // ${data.alert.label}`;
+      this.refreshVault();
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Alert creation failed';
+      this.dom.reactorStateBanner.textContent = `SENTINEL ERROR // ${msg}`.toUpperCase();
+    }
+  }
+
+  async handleToggleQuakeAlerts() {
+    const nextState = !this.dom.toggleQuakeAlertBtn.classList.contains('active');
+    this._ensureNotificationPermission();
+    try {
+      const res = await fetch('/api/alerts/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ earthquakeAlertsEnabled: nextState })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      this._updateToggleChip(this.dom.toggleQuakeAlertBtn, data.settings.earthquakeAlertsEnabled);
+    } catch (error) {
+      console.warn('[J.A.R.V.I.S.] Failed to update quake alert setting:', error);
+      this.dom.reactorStateBanner.textContent = 'SENTINEL ERROR // UNABLE TO UPDATE QUAKE ALERTS';
+    }
+  }
+
+  /**
+   * Polls the server sentinel for price alerts and new alert events, then announces them.
+   */
+  async pollSentinelAlerts() {
+    try {
+      const res = await fetch('/api/alerts');
+      if (!res.ok) return;
+      const data = await res.json();
+
+      this.priceAlerts = Array.isArray(data.priceAlerts) ? data.priceAlerts : [];
+      this._renderVault(this.lastVaultState);
+
+      if (this.dom.toggleQuakeAlertBtn && data.settings) {
+        const enabled = Boolean(data.settings.earthquakeAlertsEnabled);
+        this.dom.toggleQuakeAlertBtn.classList.toggle('active', enabled);
+        const strong = this.dom.toggleQuakeAlertBtn.querySelector('strong');
+        if (strong) strong.textContent = enabled ? 'ON' : 'OFF';
+      }
+
+      const events = Array.isArray(data.events) ? data.events : [];
+      if (events.length === 0) return;
+
+      // Announce oldest first
+      for (const evt of [...events].reverse()) {
+        this._announceSentinelEvent(evt);
+      }
+
+      await fetch('/api/alerts/ack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: events.map((e) => e.id) })
+      });
+    } catch (error) {
+      console.warn('[J.A.R.V.I.S.] Sentinel poll failed:', error);
+    }
+  }
+
+  /**
+   * Displays, speaks, and (if the tab is hidden) pushes a desktop notification for an alert event.
+   * @param {{kind: string, title: string, message: string, link?: string}} evt
+   */
+  _announceSentinelEvent(evt) {
+    const honorific = this.dom.honorificInput?.value.trim() || 'Sir';
+    const isQuake = evt.kind === 'earthquake';
+    const spoken = `${honorific}，${evt.message}`;
+
+    this.audio.playBootSequence();
+    this.appendMessage({
+      role: 'assistant',
+      sender: isQuake ? 'J.A.R.V.I.S. // SEISMIC SENTINEL' : 'J.A.R.V.I.S. // PRICE SENTINEL',
+      content: `${evt.title}\n${spoken}`,
+      speechText: spoken,
+      badge: isQuake ? 'EARTHQUAKE ALERT' : 'PRICE ALERT',
+      sources: evt.link ? [{ title: evt.title, link: evt.link, source: isQuake ? 'USGS' : 'MARKET' }] : []
+    });
+    setTimeout(() => this.audio.enqueueSpeechSegment(spoken), 600);
+
+    if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+      try {
+        const note = new Notification(evt.title, { body: evt.message, tag: evt.id });
+        note.onclick = () => window.focus();
+      } catch (error) {
+        console.warn('[J.A.R.V.I.S.] Desktop notification failed:', error);
+      }
+    }
   }
 
   _startClock() {
@@ -1050,7 +1230,30 @@ class JarvisHudController {
     container.innerHTML = '';
     if (!rawText) return;
 
-    const parts = rawText.split(/(```[\s\S]*?```)/g);
+    // Clean up raw LaTeX wrappers if an LLM emits them, transforming into clean readable text
+    const cleanText = rawText
+      .replace(/\\\[([\s\S]*?)\\\]/g, (_, inner) => {
+        return inner
+          .replace(/\\text\{([^}]+)\}/g, '$1')
+          .replace(/\\times/g, '×')
+          .replace(/\\cdot/g, '·')
+          .replace(/\\approx/g, '≈')
+          .replace(/\\le/g, '≤')
+          .replace(/\\ge/g, '≥')
+          .trim();
+      })
+      .replace(/\\\(([\s\S]*?)\\\)/g, (_, inner) => {
+        return inner
+          .replace(/\\text\{([^}]+)\}/g, '$1')
+          .replace(/\\times/g, '×')
+          .replace(/\\cdot/g, '·')
+          .replace(/\\approx/g, '≈')
+          .replace(/\\le/g, '≤')
+          .replace(/\\ge/g, '≥')
+          .trim();
+      });
+
+    const parts = cleanText.split(/(```[\s\S]*?```)/g);
     for (const part of parts) {
       if (part.startsWith('```') && part.endsWith('```')) {
         const inner = part.slice(3, -3);
@@ -1220,6 +1423,27 @@ class JarvisHudController {
         action: () => this.startTacticalTimer(600)
       },
       {
+        title: '🎯 Toggle Focus Layout — Hide Side Panels (切換專注版面 Ctrl+Shift+F)',
+        tag: 'LAYOUT',
+        action: () => this.setFocusLayout(!this.focusLayout)
+      },
+      {
+        title: '🗂️ Collapse All HUD Panels 01–08 (全部收合)',
+        tag: 'LAYOUT',
+        action: () => this.setAllSectionsCollapsed(true)
+      },
+      {
+        title: '📂 Expand All HUD Panels 01–08 (全部展開)',
+        tag: 'LAYOUT',
+        action: () => this.setAllSectionsCollapsed(false)
+      },
+      {
+        title: '🌋 Recent Earthquakes Near Taiwan (台灣近期地震查詢 USGS)',
+        tag: 'SEISMIC',
+        action: () =>
+          this.handleSendMessage('JARVIS，請幫我查詢台灣附近最近一週的地震紀錄，有沒有比較大的地震？')
+      },
+      {
         title: '📚 Search ArXiv Latest AI & LLM Research Papers (搜尋最新 ArXiv AI 論文)',
         tag: 'STARK R&D',
         action: () =>
@@ -1246,6 +1470,12 @@ class JarvisHudController {
           this.handleSendMessage(
             'JARVIS，請幫我精確計算 sha256: STARK-MARK-85 以及 (256 * 1024) / 8 的數值。'
           )
+      },
+      {
+        title: '💱 Live Currency & Unit Converter (即時外匯與公英制單位精準換算)',
+        tag: 'CONVERTER',
+        action: () =>
+          this.handleSendMessage('JARVIS，請幫我精準換算：3000 美金等於多少台幣？以及 250 磅等於幾公斤？')
       },
       {
         title: '🌐 Simultaneous Universal Translator (萬國同步口譯模式)',
@@ -1539,11 +1769,12 @@ class JarvisHudController {
     try {
       const res = await fetch('/api/vault');
       if (!res.ok) return;
-      const state = await res.json();
-      this._renderVault(state);
-    } catch {
-      // Ignore vault fetch errors
+      this.lastVaultState = await res.json();
+      this._renderVault(this.lastVaultState);
+    } catch (error) {
+      console.warn('[J.A.R.V.I.S.] Vault refresh failed:', error);
     }
+    this.pollSentinelAlerts();
   }
 
   _renderVault(state) {
@@ -1553,15 +1784,41 @@ class JarvisHudController {
     const tasks = state.tasks || [];
     const memories = state.memories || [];
     const watchlist = state.watchlist || [];
+    const alerts = this.priceAlerts || [];
 
-    if (tasks.length === 0 && memories.length === 0 && watchlist.length === 0) {
+    if (tasks.length === 0 && memories.length === 0 && watchlist.length === 0 && alerts.length === 0) {
       const empty = document.createElement('div');
       empty.style.fontSize = '0.68rem';
       empty.style.color = 'var(--text-muted)';
-      empty.textContent = 'Vault empty — Add tasks, memories, or stock tickers';
+      empty.textContent = 'Vault empty — Add tasks, memories, stock tickers, or price alerts';
       this.dom.vaultListContainer.appendChild(empty);
       return;
     }
+
+    alerts.slice(0, 10).forEach((a) => {
+      const row = document.createElement('div');
+      row.className = `vault-item alert-item ${a.triggered ? 'triggered' : ''}`;
+
+      const textSpan = document.createElement('span');
+      textSpan.textContent = a.triggered
+        ? `🔔 ALERT ✓ ${a.label} @ ${Number(a.triggeredPrice).toLocaleString()}`
+        : `🔔 ALERT: ${a.label}`;
+      textSpan.title = a.triggered
+        ? `Triggered at ${new Date(a.triggeredAt).toLocaleString()}`
+        : 'Armed — checked every 60 seconds';
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'vault-del-btn';
+      delBtn.textContent = '✕';
+      delBtn.addEventListener('click', async () => {
+        await fetch(`/api/alerts?id=${encodeURIComponent(a.id)}`, { method: 'DELETE' });
+        this.refreshVault();
+      });
+
+      row.appendChild(textSpan);
+      row.appendChild(delBtn);
+      this.dom.vaultListContainer.appendChild(row);
+    });
 
     watchlist.slice(0, 8).forEach((sym) => {
       const row = document.createElement('div');

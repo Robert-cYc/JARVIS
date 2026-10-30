@@ -7,6 +7,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createServer } from './src/server/app.js';
 import { getOllamaStatus } from './src/server/services/llmService.js';
 import { getVaultState } from './src/server/services/memoryVaultService.js';
+import { startAlertMonitor, stopAlertMonitor } from './src/server/services/alertService.js';
+import { fetchAlertQuotes } from './src/server/services/webSkillsService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -323,6 +325,10 @@ export async function bootJarvisSystem(rawArgv = process.argv.slice(2)) {
   const server = createServer();
   const activePort = await listenWithPortFallback(server, options.port);
   const hudUrl = `http://localhost:${activePort}`;
+
+  // Stark Sentinel: background price alert & Taiwan earthquake monitor (every 60s)
+  startAlertMonitor({ fetchQuotes: fetchAlertQuotes, intervalMs: 60000 });
+  server.once('close', () => stopAlertMonitor());
 
   console.log('----------------------------------------------------------------------');
   console.log(`[J.A.R.V.I.S. SYSTEM ONLINE] Holographic HUD active at: ${hudUrl}`);

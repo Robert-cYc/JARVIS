@@ -34,6 +34,15 @@ import {
   addWatchlistSymbol,
   removeWatchlistSymbol
 } from './services/memoryVaultService.js';
+import {
+  getAlertState,
+  parseAlertCommand,
+  addPriceAlert,
+  deletePriceAlert,
+  acknowledgeAlertEvents,
+  updateAlertSettings,
+  fetchTaiwanEarthquakes
+} from './services/alertService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -87,7 +96,7 @@ export function createServer() {
   const server = http.createServer(async (req, res) => {
     try {
       res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
       if (req.method === 'OPTIONS') {
@@ -343,6 +352,59 @@ export function createServer() {
         const symbol = parsedUrl.searchParams.get('symbol') || '';
         const state = await removeWatchlistSymbol(symbol);
         sendJson(res, 200, state);
+        return;
+      }
+
+      // --- Stark Sentinel: Price Alerts & Earthquake Monitor ---
+      if (req.method === 'GET' && pathname === '/api/alerts') {
+        const state = await getAlertState();
+        sendJson(res, 200, {
+          priceAlerts: state.priceAlerts,
+          events: state.events.filter((e) => !e.acknowledged),
+          settings: state.settings
+        });
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/alerts') {
+        const { text } = await readJsonBody(req);
+        const spec = parseAlertCommand(String(text || ''), { requireTrigger: false });
+        if (!spec) {
+          sendJson(res, 400, {
+            error: 'Unable to parse alert, Sir. Try "0050 > 180", "黃金漲破 NT$16000", or "NVDA 跌 3%".'
+          });
+          return;
+        }
+        const alert = await addPriceAlert(spec);
+        sendJson(res, 200, { alert });
+        return;
+      }
+
+      if (req.method === 'DELETE' && pathname === '/api/alerts') {
+        const id = parsedUrl.searchParams.get('id') || '';
+        const state = await deletePriceAlert(id);
+        sendJson(res, 200, { priceAlerts: state.priceAlerts });
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/alerts/ack') {
+        const { ids } = await readJsonBody(req);
+        await acknowledgeAlertEvents(ids);
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/alerts/settings') {
+        const patch = await readJsonBody(req);
+        const state = await updateAlertSettings(patch);
+        sendJson(res, 200, { settings: state.settings });
+        return;
+      }
+
+      if (req.method === 'GET' && pathname === '/api/skills/earthquakes') {
+        const minMagnitude = Number(parsedUrl.searchParams.get('min')) || 4.0;
+        const quakes = await fetchTaiwanEarthquakes({ feed: '2.5_week', minMagnitude });
+        sendJson(res, 200, quakes);
         return;
       }
 

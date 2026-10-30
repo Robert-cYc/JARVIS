@@ -7,6 +7,11 @@ import {
   runCyberSecurityScan,
   evaluateQuantumSandbox
 } from './networkScannerService.js';
+import { fetchTaiwanEarthquakes, GOLD_TWD_SYMBOL } from './alertService.js';
+import {
+  detectConversionIntent,
+  executeConversionSkill
+} from './conversionService.js';
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -876,6 +881,31 @@ export async function fetchMarketTelemetry(
 }
 
 /**
+ * Fetches a lightweight quote map for the price alert sentinel.
+ * Supports Yahoo Finance symbols plus GOLD_TWD (Bank of Taiwan Gold Passbook, NT$ per 台錢).
+ * @param {string[]} symbols
+ * @returns {Promise<Record<string, {price: number, changePercent?: number}>>}
+ */
+export async function fetchAlertQuotes(symbols) {
+  const list = Array.isArray(symbols) ? symbols : [];
+  const yahooSymbols = list.filter((s) => s !== GOLD_TWD_SYMBOL);
+  const quoteMap = {};
+
+  const [market, botGold] = await Promise.all([
+    yahooSymbols.length > 0 ? fetchMarketTelemetry(yahooSymbols, []) : Promise.resolve(null),
+    list.includes(GOLD_TWD_SYMBOL) ? fetchBotGoldRates() : Promise.resolve(null)
+  ]);
+
+  for (const q of market?.quotes || []) {
+    quoteMap[q.symbol] = { price: q.price, changePercent: q.changePercent };
+  }
+  if (botGold) {
+    quoteMap[GOLD_TWD_SYMBOL] = { price: botGold.sellPerQianTwd };
+  }
+  return quoteMap;
+}
+
+/**
  * Generates a comprehensive Stark Morning Briefing (Taipei & Kaohsiung Weather + Gold & Markets + Taiwan & Tech News + Tasks).
  * @param {object} [options]
  * @param {string} [options.city='台北,高雄']
@@ -1122,6 +1152,12 @@ export function detectWebSkillIntent(userMessage, forceWebSearch = false) {
     return { intent: 'sandbox_calc', query: text };
   }
 
+  // 0.25 Check for Currency & Unit Conversion (e.g. "1500 美金換台幣", "30 磅是幾公斤")
+  const convCheck = detectConversionIntent(text);
+  if (convCheck) {
+    return { intent: 'conversion', query: text };
+  }
+
   // 0.3 Check for ArXiv Research Papers
   if (/(arxiv|論文|學術研究|research\s+papers?|scientific\s+papers?)/i.test(text)) {
     const cleaned = text
@@ -1157,6 +1193,11 @@ export function detectWebSkillIntent(userMessage, forceWebSearch = false) {
   const urlMatch = text.match(/https?:\/\/[^\s<>")]+/i);
   if (urlMatch) {
     return { intent: 'url', url: urlMatch[0], query: text };
+  }
+
+  // 1.5 Check for Taiwan Earthquake / Seismic telemetry
+  if (/(地震|震度|規模.*震|有感|earthquakes?|\bquakes?\b|seismic)/i.test(text)) {
+    return { intent: 'earthquake', query: text };
   }
 
   // 2. Check for Weather, Air Quality (AQI/PM2.5) & UV Telemetry intent
@@ -1282,6 +1323,16 @@ export async function executeWebSkillForMessage(
     };
   }
 
+  if (detected.intent === 'conversion') {
+    const res = await executeConversionSkill(detected.query);
+    return {
+      executed: res.executed,
+      skill: res.skill,
+      items: res.items || [],
+      contextBlock: res.summaryText
+    };
+  }
+
   if (detected.intent === 'arxiv') {
     const res = await searchArxivPapers(detected.query || 'artificial intelligence', 5);
     return {
@@ -1307,6 +1358,16 @@ export async function executeWebSkillForMessage(
     return {
       executed: true,
       skill: 'hackernews',
+      items: res.items || [],
+      contextBlock: res.summaryText
+    };
+  }
+
+  if (detected.intent === 'earthquake') {
+    const res = await fetchTaiwanEarthquakes({ feed: '2.5_week', minMagnitude: 4.0 });
+    return {
+      executed: true,
+      skill: 'earthquake_telemetry',
       items: res.items || [],
       contextBlock: res.summaryText
     };
