@@ -557,6 +557,7 @@ class JarvisHudController {
     }
 
     if (this.dom.hudClockPill) {
+      this.dom.hudClockPill.title = 'Click to test vocal time announcement (點擊手動播報時間與鐘聲)';
       this.dom.hudClockPill.addEventListener('click', () => {
         this.announceCurrentTime(false);
       });
@@ -986,8 +987,9 @@ class JarvisHudController {
       const now = new Date();
       this.dom.hudClock.textContent = now.toTimeString().split(' ')[0];
 
-      // Automatic Hourly Time Announcement at XX:00:00
-      if (this.hourlyChimeEnabled && now.getMinutes() === 0 && now.getSeconds() <= 5) {
+      // Automatic Hourly Time Announcement at XX:00 (:00 minute)
+      // Handles background tab timer throttling without skipping
+      if (this.hourlyChimeEnabled && now.getMinutes() === 0) {
         const hourKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}`;
         if (this.lastChimedHourKey !== hourKey) {
           this.lastChimedHourKey = hourKey;
@@ -997,6 +999,16 @@ class JarvisHudController {
     };
     tick();
     setInterval(tick, 1000);
+
+    // Re-check clock immediately when browser tab regains visibility / focus
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        tick();
+      }
+    });
+    window.addEventListener('focus', () => {
+      tick();
+    });
   }
 
   /**
@@ -1057,9 +1069,7 @@ class JarvisHudController {
     });
 
     setTimeout(() => {
-      if (!this.audio.isSpeaking) {
-        this.audio.speak(speechText);
-      }
+      this.audio.speak(speechText);
     }, 380);
   }
 
