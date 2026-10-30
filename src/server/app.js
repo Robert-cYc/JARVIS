@@ -586,11 +586,16 @@ export function createServer() {
       // Serve static files from /public
       const relativePath = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
       const safePath = path.normalize(relativePath).replace(/^(\.\.(\/|\\|$))+/, '');
-      const fullPath = path.join(PUBLIC_DIR, safePath);
+      let fullPath = path.join(PUBLIC_DIR, safePath);
 
       if (!fullPath.startsWith(PUBLIC_DIR)) {
         sendJson(res, 403, { error: 'Access denied by Stark Firewall.' });
         return;
+      }
+
+      const stat = await fs.stat(fullPath).catch(() => null);
+      if (stat && stat.isDirectory()) {
+        fullPath = path.join(fullPath, 'index.html');
       }
 
       const fileBuffer = await fs.readFile(fullPath);
