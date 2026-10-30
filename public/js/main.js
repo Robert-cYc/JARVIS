@@ -107,6 +107,9 @@ class JarvisHudController {
       hostPlatformBadge: document.getElementById('hostPlatformBadge'),
       cpuLoadText: document.getElementById('cpuLoadText'),
       cpuLoadBar: document.getElementById('cpuLoadBar'),
+      gpuNeuralRow: document.getElementById('gpuNeuralRow'),
+      gpuLoadText: document.getElementById('gpuLoadText'),
+      gpuLoadBar: document.getElementById('gpuLoadBar'),
       gpuMetricRow: document.getElementById('gpuMetricRow'),
       gpuMemLoadText: document.getElementById('gpuMemLoadText'),
       gpuMemLoadBar: document.getElementById('gpuMemLoadBar'),
@@ -1137,16 +1140,28 @@ class JarvisHudController {
     this.dom.cpuLoadText.textContent = `${t.cpuUsagePercent}%`;
     this.dom.cpuLoadBar.style.width = `${t.cpuUsagePercent}%`;
 
-    if (t.gpu && t.gpu.available && this.dom.gpuMetricRow) {
-      this.dom.gpuMetricRow.classList.remove('hidden');
-      this.dom.gpuMemLoadText.textContent = `${t.gpu.memoryUsedGb} / ${t.gpu.memoryTotalGb} GB (${t.gpu.memoryUsagePercent}%)`;
-      this.dom.gpuMemLoadBar.style.width = `${t.gpu.memoryUsagePercent}%`;
+    if (t.gpu && t.gpu.available) {
+      if (this.dom.gpuNeuralRow) {
+        this.dom.gpuNeuralRow.classList.remove('hidden');
+        if (this.dom.gpuLoadText) this.dom.gpuLoadText.textContent = `${t.gpu.utilizationPercent}%`;
+        if (this.dom.gpuLoadBar) this.dom.gpuLoadBar.style.width = `${t.gpu.utilizationPercent}%`;
+      }
+      if (this.dom.gpuMetricRow) {
+        this.dom.gpuMetricRow.classList.remove('hidden');
+        this.dom.gpuMemLoadText.textContent = `${t.gpu.memoryUsedGb} / ${t.gpu.memoryTotalGb} GB (${t.gpu.memoryUsagePercent}%)`;
+        this.dom.gpuMemLoadBar.style.width = `${t.gpu.memoryUsagePercent}%`;
+      }
       if (this.dom.gpuModelRow && this.dom.gpuModelText) {
         this.dom.gpuModelRow.classList.remove('hidden');
         this.dom.gpuModelText.textContent = `${t.gpu.name} (${t.gpu.utilizationPercent}% • ${t.gpu.temperatureC}°C)`;
       }
-    } else if (this.dom.gpuMetricRow) {
-      this.dom.gpuMetricRow.classList.add('hidden');
+    } else {
+      if (this.dom.gpuNeuralRow) {
+        this.dom.gpuNeuralRow.classList.add('hidden');
+      }
+      if (this.dom.gpuMetricRow) {
+        this.dom.gpuMetricRow.classList.add('hidden');
+      }
       if (this.dom.gpuModelRow) {
         this.dom.gpuModelRow.classList.add('hidden');
       }
