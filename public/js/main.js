@@ -162,13 +162,17 @@ class JarvisHudController {
 
     this.audio.onSpeakingStateChange = (speaking) => {
       if (speaking) {
+        this.speechInput?.pauseForTts();
         this.visualizer.setState('SPEAKING');
         this.dom.reactorStateBanner.textContent =
           'VOCAL TRANSMISSION ACTIVE // J.A.R.V.I.S. SPEAKING';
       } else {
-        this.visualizer.setState('IDLE');
-        this.dom.reactorStateBanner.textContent =
-          'ONLINE // AWAITING COMMAND, SIR';
+        this.speechInput?.resumeAfterTts();
+        if (!this.speechInput?.wakeWordMode) {
+          this.visualizer.setState('IDLE');
+          this.dom.reactorStateBanner.textContent =
+            'ONLINE // AWAITING COMMAND, SIR';
+        }
       }
     };
   }
@@ -185,29 +189,30 @@ class JarvisHudController {
       onWakeWord: (commandText) => {
         this.audio.playBootSequence();
         if (commandText && commandText.trim().length > 0) {
+          this.dom.userInput.value = '';
           this.handleSendMessage(commandText.trim());
         } else {
-          const honorific = this.dom.honorificInput.value || 'Sir';
-          const ack =
-            this.dom.languageSelect.value === 'en-GB'
-              ? `At your service, ${honorific}.`
-              : `${honorific}，請吩咐。`;
-          this.audio.speak(ack);
+          this.dom.userInput.value = '';
           this.dom.reactorStateBanner.textContent =
-            'WAKE WORD DETECTED // LISTENING FOR DIRECTIVE, SIR';
+            '🟢 WAKE WORD ACTIVE // SPEAK DIRECTIVE NOW (15S WINDOW)';
         }
       },
       onStateChange: (listening) => {
         if (listening) {
+          const isFollowup = this.speechInput.awaitingWakeFollowup;
           this.dom.micBtn.textContent = this.speechInput.wakeWordMode
-            ? 'MIC: WAKE-ON'
+            ? isFollowup
+              ? 'MIC: ACTIVE (15S)'
+              : 'MIC: WAKE-ON'
             : 'MIC: LISTENING';
           this.dom.micBtn.classList.add('amber');
           this.visualizer.setState('LISTENING');
           this.dom.reactorStateBanner.textContent = this.speechInput.wakeWordMode
-            ? 'HANDS-FREE WAKE MODE // SAY "JARVIS / 賈維斯"'
+            ? isFollowup
+              ? '🟢 FOLLOW-UP WINDOW OPEN // SPEAK DIRECTLY OR SAY "JARVIS"'
+              : 'HANDS-FREE WAKE MODE // SAY "JARVIS / 賈維斯"'
             : 'AUDIO SENSORS ACTIVE // LISTENING TO SIR';
-        } else {
+        } else if (!this.speechInput.wakeWordMode) {
           this.dom.micBtn.textContent = 'MIC: OFF';
           this.dom.micBtn.classList.remove('amber');
           if (!this.audio.isSpeaking) {
@@ -1600,9 +1605,12 @@ class JarvisHudController {
     } finally {
       this.dom.sendBtn.disabled = false;
       if (!this.audio.isSpeaking) {
-        this.visualizer.setState('IDLE');
-        this.dom.reactorStateBanner.textContent =
-          'ONLINE // AWAITING COMMAND, SIR';
+        this.speechInput?.resumeAfterTts();
+        if (!this.speechInput?.wakeWordMode) {
+          this.visualizer.setState('IDLE');
+          this.dom.reactorStateBanner.textContent =
+            'ONLINE // AWAITING COMMAND, SIR';
+        }
       }
     }
   }
