@@ -149,9 +149,7 @@ class JarvisHudController {
       commandPaletteModal: document.getElementById('commandPaletteModal'),
       closeCmdPaletteBtn: document.getElementById('closeCmdPaletteBtn'),
       cmdPaletteInput: document.getElementById('cmdPaletteInput'),
-      cmdPaletteList: document.getElementById('cmdPaletteList'),
-      housePartyBtn: document.getElementById('housePartyBtn'),
-      veronicaBtn: document.getElementById('veronicaBtn')
+      cmdPaletteList: document.getElementById('cmdPaletteList')
     };
   }
 
@@ -532,19 +530,7 @@ class JarvisHudController {
       });
     }
 
-    // Iconic Movie Protocols & Command Palette (Ctrl+K)
-    if (this.dom.housePartyBtn) {
-      this.dom.housePartyBtn.addEventListener('click', () => {
-        this.triggerHousePartyProtocol();
-      });
-    }
-
-    if (this.dom.veronicaBtn) {
-      this.dom.veronicaBtn.addEventListener('click', () => {
-        this.triggerVeronicaProtocol();
-      });
-    }
-
+    // Command Palette (Ctrl+K)
     if (this.dom.cmdPaletteBtn) {
       this.dom.cmdPaletteBtn.addEventListener('click', () => {
         this.openCommandPalette();
@@ -989,16 +975,6 @@ class JarvisHudController {
 
     const directives = [
       {
-        title: '🎉 Engage House Party Protocol (啟動狂歡派對協定：全裝甲機甲集結)',
-        tag: 'MOVIE PROTOCOL',
-        action: () => this.triggerHousePartyProtocol()
-      },
-      {
-        title: '🚨 Engage Veronica Lockdown (啟動維羅妮卡戰備封鎖與本機資安掃描)',
-        tag: 'DEFENSE PROTOCOL',
-        action: () => this.triggerVeronicaProtocol()
-      },
-      {
         title: '🛡️ Run Cyber-Security & Localhost TCP Port Scan (本機連接埠與網路延遲掃描)',
         tag: 'CYBER SECURITY',
         action: () =>
@@ -1125,101 +1101,6 @@ class JarvisHudController {
       });
 
       this.dom.cmdPaletteList.appendChild(row);
-    }
-  }
-
-  triggerHousePartyProtocol() {
-    this.audio.playBootSequence();
-    const honorific = this.dom.honorificInput.value || 'Sir';
-    const suits = [
-      'MARK VII (Tactical Heavy Deployment) — Flight Thrusters: 100% ONLINE',
-      'MARK XV "SNEAKY" (Stealth Cloaking Array) — Radar Cross-Section: 0.001 m²',
-      'MARK XVII "HEARTBREAKER" (Artillery Level RT) — Unibeam Charged: 140%',
-      'MARK XXXIII "SILVER CENTURION" (Enhanced Energy Blade) — Engaged',
-      'MARK XXXVIII "IGOR" (Heavy Lifting Rig) — Hydraulic Stabilizers Locked',
-      'MARK XL "SHOTGUN" (Hyper-Velocity Mach 5+) — Sub-Orbital Ready',
-      'MARK XLIV "HULKBUSTER" (Veronica Satellite Pod) — Orbital Standby',
-      'MARK LXXXV (Nanotech Prime Bleeding-Edge) — Neural Link Synced to Sir'
-    ];
-
-    const report =
-      `🎉 **[HOUSE PARTY PROTOCOL INITIATED // 狂歡派對協定全面啟動]**\n\n` +
-      `At your command, ${honorific}. Opening Stark Mansion subterranean armor vaults and deploying the entire Iron Legion fleet:\n\n` +
-      '```text\n' +
-      suits.map((s, idx) => `[LEGION-0${idx + 1}] ${s}`).join('\n') +
-      '\n```\n\n' +
-      `All 8 primary combat armors are airborne and locked onto your telemetry beacon. Shall I cue the AC/DC soundtrack, ${honorific}?`;
-
-    const speech = `House Party Protocol initiated, ${honorific}. 狂歡派對協定已啟動，所有馬克系列機甲已從地下裝甲庫全數升空，隨時聽候您的戰術指揮。`;
-
-    this.appendMessage({
-      role: 'assistant',
-      sender: 'J.A.R.V.I.S. // IRON LEGION COMMAND',
-      content: report,
-      speechText: speech,
-      badge: 'HOUSE PARTY PROTOCOL // ENGAGED'
-    });
-    this.audio.speak(speech);
-  }
-
-  async triggerVeronicaProtocol() {
-    this.audio.playBootSequence();
-    const honorific = this.dom.honorificInput.value || 'Sir';
-
-    // Switch HUD to Hulkbuster Crimson/Gold & Tactical Persona
-    if (this.dom.suitThemeSelect) {
-      this.dom.suitThemeSelect.value = 'hulkbuster';
-      this.applySuitTheme('hulkbuster');
-    }
-    if (this.dom.personaSelect) {
-      this.dom.personaSelect.value = 'tactical';
-      this.dom.activeProtocolText.textContent = 'TACTICAL';
-    }
-    this._saveSettings();
-
-    this.dom.reactorStateBanner.textContent =
-      '🚨 VERONICA PROTOCOL ENGAGED // PERFORMING LIVE CYBER & PORT SWEEP';
-
-    try {
-      const res = await fetch('/api/skills/cyber-scan');
-      const scan = await res.json();
-      const openList = (scan.openPorts || [])
-        .map((p) => `- Port ${p.port} (${p.service}): OPEN [${p.latencyMs}ms]`)
-        .join('\n');
-
-      const report =
-        `🚨 **[VERONICA ORBITAL DEFENSE & CYBER LOCKDOWN // 維羅妮卡戰備協定已啟動]**\n\n` +
-        `HUD switched to **HULKBUSTER XLIV (Crimson/Gold)** combat mode. Real-time host perimeter and TCP port sweep completed:\n\n` +
-        `- **Security Posture**: \`${scan.securityStatus || 'NOMINAL'}\`\n` +
-        `- **Satellite Uplink Latency**: \`${scan.internetLatencyMs ?? 'N/A'} ms\`\n` +
-        `- **Active Localhost TCP Ports (${(scan.openPorts || []).length} open / ${
-          scan.closedCount || 0
-        } closed)**:\n` +
-        `${openList || '- No listening ports detected'}\n\n` +
-        `All defensive countermeasures and Stark Firewalls are at maximum readiness, ${honorific}.`;
-
-      const speech = `Veronica Protocol engaged, ${honorific}. 維羅妮卡戰備防禦協定已啟動，已切換為浩克毀滅者戰鬥模式並完成本機連接埠資安掃描，目前開啟 ${
-        (scan.openPorts || []).length
-      } 個服務埠，網路延遲 ${scan.internetLatencyMs ?? 0} 毫秒。`;
-
-      this.appendMessage({
-        role: 'assistant',
-        sender: 'J.A.R.V.I.S. // VERONICA DEFENSE',
-        content: report,
-        speechText: speech,
-        badge: 'VERONICA LOCKDOWN // ACTIVE',
-        sources: scan.items || []
-      });
-      this.audio.speak(speech);
-    } catch {
-      const fallback = `Veronica Protocol engaged, ${honorific}. Combat HUD active.`;
-      this.appendMessage({
-        role: 'assistant',
-        sender: 'J.A.R.V.I.S. // VERONICA DEFENSE',
-        content: fallback,
-        speechText: fallback,
-        badge: 'VERONICA LOCKDOWN'
-      });
     }
   }
 
