@@ -286,6 +286,38 @@ body::after {
   color: var(--amber);
 }
 
+/* Collapsible HUD Panel Sections (05 // & 06 //) */
+.panel-section.collapsible > .section-header {
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.2s, opacity 0.2s;
+}
+
+.panel-section.collapsible > .section-header:hover {
+  opacity: 0.88;
+}
+
+.panel-section.collapsible > .section-header .section-title::before {
+  content: '▼ ';
+  font-size: 0.65rem;
+  margin-right: 4px;
+  color: var(--cyan);
+}
+
+.panel-section.collapsible.collapsed > .section-header {
+  border-bottom-color: transparent;
+  padding-bottom: 0;
+  margin-bottom: 0;
+}
+
+.panel-section.collapsible.collapsed > .section-header .section-title::before {
+  content: '▶ ';
+}
+
+.panel-section.collapsible.collapsed > *:not(.section-header) {
+  display: none !important;
+}
+
 /* Form Controls */
 .field-group {
   display: flex;
