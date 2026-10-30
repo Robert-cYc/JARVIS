@@ -1542,14 +1542,6 @@ class JarvisHudController {
           this.handleSendMessage('JARVIS，請執行本機連接埠與資安掃描，檢查 Ollama 與本地開發服務健康狀態。')
       },
       {
-        title: '📚 Search ArXiv Latest AI & LLM Research Papers (搜尋最新 ArXiv AI 論文)',
-        tag: 'STARK R&D',
-        action: () =>
-          this.handleSendMessage(
-            'JARVIS，請幫我查詢 ArXiv 最新關於 Large Language Models 與 AI Agent 的學術研究論文。'
-          )
-      },
-      {
         title: '💻 Search GitHub Trending AI Repositories (搜尋 GitHub 熱門開源專案)',
         tag: 'STARK R&D',
         action: () =>
@@ -1574,14 +1566,6 @@ class JarvisHudController {
         tag: 'CONVERTER',
         action: () =>
           this.handleSendMessage('JARVIS，請幫我精準換算：3000 美金等於多少台幣？以及 250 磅等於幾公斤？')
-      },
-      {
-        title: '🌐 Simultaneous Universal Translator (萬國同步口譯模式)',
-        tag: 'TRANSLATOR',
-        action: () =>
-          this.handleSendMessage(
-            'JARVIS，請啟動雙向同步口譯模式：將『我們已經完成量子反應爐的能源校準，隨時可以進行全球部署』翻譯成優雅的皇室英式英文與商務日文。'
-          )
       },
       {
         title: '🎨 Switch Suit Theme: HULKBUSTER XLIV (切換浩克毀滅者裝甲主題)',
