@@ -318,6 +318,18 @@ class JarvisHudController {
           if (strong) strong.textContent = this.hourlyChimeEnabled ? 'ON' : 'OFF';
         }
       }
+      if (typeof cfg.ambientHumEnabled === 'boolean' && this.dom.toggleAmbientHumBtn) {
+        if (cfg.ambientHumEnabled) {
+          this._updateToggleChip(this.dom.toggleAmbientHumBtn, true);
+          const resumeHum = () => {
+            if (this.dom.toggleAmbientHumBtn?.classList.contains('active')) {
+              this.audio.setAmbientHum(true);
+            }
+            window.removeEventListener('click', resumeHum);
+          };
+          window.addEventListener('click', resumeHum, { once: true });
+        }
+      }
       if (Array.isArray(cfg.collapsedSections)) {
         document.querySelectorAll('.panel-section.collapsible[data-section-id]').forEach((sec) => {
           const secId = sec.getAttribute('data-section-id');
@@ -351,6 +363,7 @@ class JarvisHudController {
         pitch: this.audio.pitch,
         rate: this.audio.rate,
         hourlyChimeEnabled: this.hourlyChimeEnabled,
+        ambientHumEnabled: this.audio.ambientHumEnabled,
         collapsedSections,
         focusLayout: this.focusLayout
       };
@@ -547,6 +560,7 @@ class JarvisHudController {
       this.dom.toggleAmbientHumBtn.addEventListener('click', () => {
         const active = this.audio.setAmbientHum(!this.audio.ambientHumEnabled);
         this._updateToggleChip(this.dom.toggleAmbientHumBtn, active);
+        this._saveSettings();
       });
     }
 
@@ -2219,8 +2233,16 @@ class JarvisHudController {
             if (evt.timerAction && evt.timerAction.executed && evt.timerAction.durationSeconds > 0) {
               this.startTacticalTimer(evt.timerAction.durationSeconds);
             }
-            if (evt.launchAction && evt.launchAction.url) {
-              window.open(evt.launchAction.url, '_blank', 'noopener,noreferrer');
+            if (evt.launchAction) {
+              if (evt.launchAction.url) {
+                window.open(evt.launchAction.url, '_blank', 'noopener,noreferrer');
+              } else if (evt.launchAction.type === 'ambient_hum') {
+                const active = this.audio.setAmbientHum(Boolean(evt.launchAction.state));
+                if (this.dom.toggleAmbientHumBtn) {
+                  this._updateToggleChip(this.dom.toggleAmbientHumBtn, active);
+                }
+                this._saveSettings();
+              }
             }
           } else if (evt.type === 'delta' && evt.text) {
             accumulatedText += evt.text;

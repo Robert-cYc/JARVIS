@@ -139,6 +139,16 @@ describe('J.A.R.V.I.S. Web Skills & News Service', () => {
     assert.equal(solarCmd.type, 'local_app');
     assert.ok(solarCmd.apps.some((a) => a.appId === 'solarsystem'));
     assert.equal(solarCmd.url, '/solarSystem/index.html');
+
+    const humOnCmd = detectLauncherCommand('JARVIS，請開啟反應爐環境音');
+    assert.ok(humOnCmd);
+    assert.equal(humOnCmd.type, 'ambient_hum');
+    assert.equal(humOnCmd.state, true);
+
+    const humOffCmd = detectLauncherCommand('關閉環境音');
+    assert.ok(humOffCmd);
+    assert.equal(humOffCmd.type, 'ambient_hum');
+    assert.equal(humOffCmd.state, false);
   });
 
   it('parses Bank of Taiwan (BOT) Gold Passbook HTML rates accurately', () => {

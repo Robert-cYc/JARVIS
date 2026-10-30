@@ -1605,6 +1605,17 @@ export function detectLauncherCommand(userMessage) {
     }
   }
 
+  // 4. Ambient Reactor Hum ("開啟環境音", "打開反應爐嗡鳴", "turn on ambient hum", "關閉環境音")
+  if (/(環境音|反應爐.*(?:聲音|嗡鳴|音效)|ambient\s*(?:hum|sound))/i.test(text)) {
+    const turnOff = /(關閉|停止|關掉|關\b|stop|off|disable|mute)/i.test(text);
+    return {
+      executed: true,
+      type: 'ambient_hum',
+      state: !turnOff,
+      label: turnOff ? 'Disable Ambient Reactor Hum' : 'Enable Ambient Reactor Hum'
+    };
+  }
+
   return null;
 }
 

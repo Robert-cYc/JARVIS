@@ -451,6 +451,7 @@ export class JarvisAudioEngine {
 
   /**
    * Starts or stops the Stark Workshop Ambient Arc Reactor Hum & Brown Noise generator for deep focus.
+   * Calibrated with multi-harmonic resonance (60Hz + 120Hz + 180Hz) to ensure clear audibility on laptop speakers and headphones.
    * @param {boolean} active
    * @returns {boolean}
    */
@@ -462,16 +463,15 @@ export class JarvisAudioEngine {
     if (this.ambientHumEnabled && !this.ambientNodes) {
       const now = ctx.currentTime;
 
-      // 1. Generate 4-second looping Brown Noise buffer
+      // 1. Looping Brown Noise buffer for soothing reactor cooling airflow atmosphere
       const bufferSize = ctx.sampleRate * 4;
       const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
       const output = noiseBuffer.getChannelData(0);
       let lastOut = 0.0;
       for (let i = 0; i < bufferSize; i += 1) {
         const white = Math.random() * 2 - 1;
-        output[i] = (lastOut + 0.02 * white) / 1.02;
-        lastOut = output[i];
-        output[i] *= 0.18;
+        lastOut = (lastOut + 0.05 * white) / 1.05;
+        output[i] = lastOut * 3.2;
       }
 
       const noiseNode = ctx.createBufferSource();
@@ -480,50 +480,73 @@ export class JarvisAudioEngine {
 
       const noiseFilter = ctx.createBiquadFilter();
       noiseFilter.type = 'lowpass';
-      noiseFilter.frequency.setValueAtTime(160, now);
+      noiseFilter.frequency.setValueAtTime(320, now);
+      noiseFilter.Q.setValueAtTime(1.0, now);
 
-      // 2. Dual Warm Sub-Harmonic Reactor Drone (55Hz A1 + 110Hz A2)
+      const noiseGain = ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.08, now);
+
+      // 2. Multi-Harmonic Stark Arc Reactor Electromagnetic Drone
+      // Fundamental: 60Hz (sub-bass), 120Hz (core), 180Hz (midrange clearly audible on laptop speakers)
       const droneSub = ctx.createOscillator();
+      const droneCore = ctx.createOscillator();
       const droneHarmonic = ctx.createOscillator();
+
       droneSub.type = 'sine';
-      droneSub.frequency.setValueAtTime(55, now);
+      droneSub.frequency.setValueAtTime(60, now);
+
+      droneCore.type = 'sine';
+      droneCore.frequency.setValueAtTime(120, now);
+
       droneHarmonic.type = 'triangle';
-      droneHarmonic.frequency.setValueAtTime(110, now);
+      droneHarmonic.frequency.setValueAtTime(180, now);
 
       const droneFilter = ctx.createBiquadFilter();
       droneFilter.type = 'lowpass';
-      droneFilter.frequency.setValueAtTime(190, now);
+      droneFilter.frequency.setValueAtTime(280, now);
+      droneFilter.Q.setValueAtTime(2.0, now);
 
+      const droneGain = ctx.createGain();
+      droneGain.gain.setValueAtTime(0.09, now);
+
+      // Master output stage with smooth ramp
       const masterGain = ctx.createGain();
       masterGain.gain.setValueAtTime(0.0001, now);
-      masterGain.gain.linearRampToValueAtTime(0.045, now + 1.2);
+      masterGain.gain.linearRampToValueAtTime(0.18, now + 0.8);
 
+      // Connect noise path
       noiseNode.connect(noiseFilter);
-      noiseFilter.connect(masterGain);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(masterGain);
 
+      // Connect drone path
       droneSub.connect(droneFilter);
+      droneCore.connect(droneFilter);
       droneHarmonic.connect(droneFilter);
-      droneFilter.connect(masterGain);
+      droneFilter.connect(droneGain);
+      droneGain.connect(masterGain);
 
       masterGain.connect(ctx.destination);
 
       noiseNode.start(now);
       droneSub.start(now);
+      droneCore.start(now);
       droneHarmonic.start(now);
 
-      this.ambientNodes = { noiseNode, droneSub, droneHarmonic, masterGain };
+      this.ambientNodes = { noiseNode, droneSub, droneCore, droneHarmonic, masterGain };
       return true;
     }
 
     if (!this.ambientHumEnabled && this.ambientNodes) {
       try {
         const now = ctx.currentTime;
-        const { noiseNode, droneSub, droneHarmonic, masterGain } = this.ambientNodes;
+        const { noiseNode, droneSub, droneCore, droneHarmonic, masterGain } = this.ambientNodes;
         masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-        masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
-        noiseNode.stop(now + 0.5);
-        droneSub.stop(now + 0.5);
-        droneHarmonic.stop(now + 0.5);
+        masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
+        noiseNode.stop(now + 0.45);
+        droneSub.stop(now + 0.45);
+        if (droneCore) droneCore.stop(now + 0.45);
+        droneHarmonic.stop(now + 0.45);
       } catch {
         // Ignore stop errors
       }
