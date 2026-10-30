@@ -49,7 +49,12 @@
             <span>ARC:</span>
             <strong id="arcOutputHeader">98.8%</strong>
           </div>
-          <div class="telemetry-pill">
+          <div
+            id="hudClockPill"
+            class="telemetry-pill"
+            style="cursor: pointer"
+            title="Click for J.A.R.V.I.S. Time Announcement (點擊立即語音報時)"
+          >
             <span>TIME:</span>
             <strong id="hudClock">--:--:--</strong>
           </div>
@@ -249,16 +254,24 @@
               <span id="timerDisplayBadge" class="section-badge amber">TIMER: 00:00</span>
             </div>
 
-            <!-- Tactical Voice Countdown Timer -->
+            <!-- Tactical Voice Countdown Timer & Hourly Chime -->
             <div class="field-group">
               <label class="field-label">
-                <span>TACTICAL VOICE COUNTDOWN</span>
+                <span>TACTICAL TIMER &amp; CHRONO CHIME</span>
               </label>
               <div class="timer-btn-row">
                 <button type="button" class="hud-btn timer-preset-btn" data-minutes="1">1M</button>
                 <button type="button" class="hud-btn timer-preset-btn" data-minutes="5">5M</button>
                 <button type="button" class="hud-btn timer-preset-btn" data-minutes="25">25M</button>
                 <button id="cancelTimerBtn" type="button" class="hud-btn danger">STOP</button>
+                <button
+                  id="announceTimeBtn"
+                  type="button"
+                  class="hud-btn amber"
+                  title="Announce Current Time (立即語音報時)"
+                >
+                  🔔 報時
+                </button>
               </div>
             </div>
 
@@ -477,6 +490,14 @@
               </div>
               <div id="toggleSfxBtn" class="toggle-chip active">
                 <span>HUD SFX</span>
+                <strong>ON</strong>
+              </div>
+              <div
+                id="toggleHourlyChimeBtn"
+                class="toggle-chip active"
+                title="Automatic Hourly Voice Time Announcement (自動整點報時)"
+              >
+                <span>HOURLY CHIME</span>
                 <strong>ON</strong>
               </div>
               <div id="testVoiceBtn" class="toggle-chip">

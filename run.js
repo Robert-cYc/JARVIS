@@ -27,7 +27,7 @@ const __dirname = path.dirname(__filename);
 export function parseCliArgs(argv = []) {
   /** @type {LauncherOptions} */
   const options = {
-    port: Number(process.env.PORT) || 3000,
+    port: Number(process.env.PORT) || 63219,
     openBrowserOnStart: true,
     skipOllamaBoot: false,
     runTestsFirst: false

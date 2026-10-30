@@ -165,6 +165,40 @@ export class JarvisAudioEngine {
   }
 
   /**
+   * Synthesizes a refined Stark harmonic bell chime for hourly time announcements.
+   */
+  playHourlyChime() {
+    if (!this.sfxEnabled) return;
+    const ctx = this._ensureAudioContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    // Two-note harmonic chime (E5 -> B5 -> E6)
+    const chimeNotes = [
+      { freq: 659.25, delay: 0, duration: 0.35 },
+      { freq: 987.77, delay: 0.14, duration: 0.35 },
+      { freq: 1318.51, delay: 0.28, duration: 0.65 }
+    ];
+
+    chimeNotes.forEach(({ freq, delay, duration }) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + delay);
+
+      gain.gain.setValueAtTime(0.001, now + delay);
+      gain.gain.linearRampToValueAtTime(0.055, now + delay + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0008, now + delay + duration);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now + delay);
+      osc.stop(now + delay + duration + 0.02);
+    });
+  }
+
+  /**
    * Plays a subtle telemetry computation chirp when transmitting to LLM.
    */
   playTelemetryChirp() {

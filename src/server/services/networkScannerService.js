@@ -3,7 +3,8 @@ import crypto from 'node:crypto';
 import vm from 'node:vm';
 
 export const COMMON_DEV_PORTS = [
-  { port: 3000, service: 'J.A.R.V.I.S. HUD / Node Dev' },
+  { port: 63219, service: 'J.A.R.V.I.S. HUD Server' },
+  { port: 3000, service: 'Node Dev Server' },
   { port: 5173, service: 'Vite Frontend Server' },
   { port: 8000, service: 'Python / FastAPI / Django' },
   { port: 8080, service: 'HTTP Proxy / Spring / Go' },

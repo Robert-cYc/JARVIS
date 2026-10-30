@@ -14,6 +14,8 @@ class JarvisHudController {
     this.pendingImageDataUrl = '';
     this.timerInterval = null;
     this.timerRemainingSeconds = 0;
+    this.hourlyChimeEnabled = true;
+    this.lastChimedHourKey = '';
     this.modelCatalog = {
       ollama: { online: false, models: [] },
       cloudCatalog: {
@@ -60,6 +62,7 @@ class JarvisHudController {
       ollamaStatusDot: document.getElementById('ollamaStatusDot'),
       activeProviderLabel: document.getElementById('activeProviderLabel'),
       arcOutputHeader: document.getElementById('arcOutputHeader'),
+      hudClockPill: document.getElementById('hudClockPill'),
       hudClock: document.getElementById('hudClock'),
       bootAudioBtn: document.getElementById('bootAudioBtn'),
       suitThemeSelect: document.getElementById('suitThemeSelect'),
@@ -125,6 +128,7 @@ class JarvisHudController {
       toggleVoiceBtn: document.getElementById('toggleVoiceBtn'),
       toggleResonanceBtn: document.getElementById('toggleResonanceBtn'),
       toggleSfxBtn: document.getElementById('toggleSfxBtn'),
+      toggleHourlyChimeBtn: document.getElementById('toggleHourlyChimeBtn'),
       testVoiceBtn: document.getElementById('testVoiceBtn'),
       toggleWebSkillBtn: document.getElementById('toggleWebSkillBtn'),
       toggleForceSearchBtn: document.getElementById('toggleForceSearchBtn'),
@@ -132,6 +136,7 @@ class JarvisHudController {
 
       timerDisplayBadge: document.getElementById('timerDisplayBadge'),
       cancelTimerBtn: document.getElementById('cancelTimerBtn'),
+      announceTimeBtn: document.getElementById('announceTimeBtn'),
       vaultInput: document.getElementById('vaultInput'),
       addTaskBtn: document.getElementById('addTaskBtn'),
       addMemoryBtn: document.getElementById('addMemoryBtn'),
@@ -284,6 +289,14 @@ class JarvisHudController {
         this.dom.rateSlider.value = String(cfg.rate);
         this.dom.rateValText.textContent = `${cfg.rate.toFixed(2)}x`;
       }
+      if (typeof cfg.hourlyChimeEnabled === 'boolean') {
+        this.hourlyChimeEnabled = cfg.hourlyChimeEnabled;
+        if (this.dom.toggleHourlyChimeBtn) {
+          this.dom.toggleHourlyChimeBtn.classList.toggle('active', this.hourlyChimeEnabled);
+          const strong = this.dom.toggleHourlyChimeBtn.querySelector('strong');
+          if (strong) strong.textContent = this.hourlyChimeEnabled ? 'ON' : 'OFF';
+        }
+      }
     } catch {
       // Ignore corrupt storage
     }
@@ -300,7 +313,8 @@ class JarvisHudController {
         honorific: this.dom.honorificInput.value,
         suitTheme: this.dom.suitThemeSelect?.value || 'mark85',
         pitch: this.audio.pitch,
-        rate: this.audio.rate
+        rate: this.audio.rate,
+        hourlyChimeEnabled: this.hourlyChimeEnabled
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch {
@@ -449,6 +463,26 @@ class JarvisHudController {
       this.audio.sfxEnabled = !this.audio.sfxEnabled;
       this._updateToggleChip(this.dom.toggleSfxBtn, this.audio.sfxEnabled);
     });
+
+    if (this.dom.toggleHourlyChimeBtn) {
+      this.dom.toggleHourlyChimeBtn.addEventListener('click', () => {
+        this.hourlyChimeEnabled = !this.hourlyChimeEnabled;
+        this._updateToggleChip(this.dom.toggleHourlyChimeBtn, this.hourlyChimeEnabled);
+        this._saveSettings();
+      });
+    }
+
+    if (this.dom.announceTimeBtn) {
+      this.dom.announceTimeBtn.addEventListener('click', () => {
+        this.announceCurrentTime(false);
+      });
+    }
+
+    if (this.dom.hudClockPill) {
+      this.dom.hudClockPill.addEventListener('click', () => {
+        this.announceCurrentTime(false);
+      });
+    }
 
     if (this.dom.toggleWebSkillBtn) {
       this.dom.toggleWebSkillBtn.addEventListener('click', () => {
@@ -608,9 +642,82 @@ class JarvisHudController {
     const tick = () => {
       const now = new Date();
       this.dom.hudClock.textContent = now.toTimeString().split(' ')[0];
+
+      // Automatic Hourly Time Announcement at XX:00:00
+      if (this.hourlyChimeEnabled && now.getMinutes() === 0 && now.getSeconds() <= 5) {
+        const hourKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}`;
+        if (this.lastChimedHourKey !== hourKey) {
+          this.lastChimedHourKey = hourKey;
+          this.announceCurrentTime(true);
+        }
+      }
     };
     tick();
     setInterval(tick, 1000);
+  }
+
+  /**
+   * Plays the Stark harmonic bell chime and announces the current time in J.A.R.V.I.S.'s voice.
+   * @param {boolean} [isHourly=false] - True when triggered automatically on the hour (:00)
+   */
+  announceCurrentTime(isHourly = false) {
+    this.audio.playHourlyChime();
+    const now = new Date();
+    const hours24 = now.getHours();
+    const mins = now.getMinutes();
+    const honorific = this.dom.honorificInput?.value.trim() || 'Sir';
+    const lang = this.dom.languageSelect?.value || 'auto';
+
+    let periodZh = '上午';
+    if (hours24 >= 0 && hours24 < 5) periodZh = '凌晨';
+    else if (hours24 >= 5 && hours24 < 8) periodZh = '清晨';
+    else if (hours24 >= 8 && hours24 < 11) periodZh = '上午';
+    else if (hours24 >= 11 && hours24 < 13) periodZh = '中午';
+    else if (hours24 >= 13 && hours24 < 18) periodZh = '下午';
+    else periodZh = '晚上';
+
+    const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
+    const padH = String(hours24).padStart(2, '0');
+    const padM = String(mins).padStart(2, '0');
+
+    let careNoteZh = '所有方舟反應爐與主機系統運作正常。';
+    let careNoteEn = 'All Mark 85 systems are operating at peak efficiency.';
+    if (hours24 >= 23 || hours24 < 5) {
+      careNoteZh = '夜深了，提醒您適度休息以維持最佳生理狀態。';
+      careNoteEn = 'It is quite late; I recommend getting some rest soon.';
+    } else if (hours24 === 12) {
+      careNoteZh = '正值午間時段，建議您稍作休息並補充能量。';
+      careNoteEn = 'It is midday; a brief pause for nourishment is recommended.';
+    }
+
+    const timePhraseZh =
+      mins === 0 ? `${periodZh} ${hours12} 點整` : `${periodZh} ${hours12} 點 ${mins} 分`;
+    const timePhraseEn =
+      mins === 0 ? `${padH} hundred hours` : `${padH}:${padM}`;
+
+    const prefixZh = isHourly ? '【J.A.R.V.I.S. 整點報時】' : '【J.A.R.V.I.S. 標準時間播報】';
+    const msgZh = `${prefixZh}${honorific}，現在時間是 ${timePhraseZh}（${padH}:${padM}）。${careNoteZh}`;
+    const speechZh = `${honorific}，現在時間是${timePhraseZh}。${careNoteZh}`;
+
+    const msgEn = `[CHRONO CHIME] ${honorific}, the current time is ${timePhraseEn}. ${careNoteEn}`;
+
+    const useEnglish = lang === 'en-GB';
+    const content = useEnglish ? msgEn : msgZh;
+    const speechText = useEnglish ? msgEn : speechZh;
+
+    this.appendMessage({
+      role: 'assistant',
+      sender: 'J.A.R.V.I.S. // CHRONO TELEMETRY',
+      content,
+      speechText,
+      badge: isHourly ? `HOURLY CHIME // ${padH}:00` : `TIME CHECK // ${padH}:${padM}`
+    });
+
+    setTimeout(() => {
+      if (!this.audio.isSpeaking) {
+        this.audio.speak(speechText);
+      }
+    }, 380);
   }
 
   async refreshTelemetryOnly() {

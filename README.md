@@ -100,7 +100,7 @@ cp .env.example .env
 `.env` 內容範例：
 
 ```env
-PORT=3000
+PORT=63219
 OLLAMA_BASE_URL=http://127.0.0.1:11434
 
 # 選用：也可直接於前端 HUD 介面動態輸入
@@ -133,7 +133,7 @@ npm run dev
 ```
 
 啟動後，請在瀏覽器開啟：
-**[http://localhost:3000](http://localhost:3000)**
+**[http://localhost:63219](http://localhost:63219)**
 
 ### 3. 執行單元測試
 
