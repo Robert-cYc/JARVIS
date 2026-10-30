@@ -583,6 +583,21 @@ export async function runAlertCheckCycle({
   });
 }
 
+/**
+ * Pushes an arbitrary alert event into state (used by automation triggers).
+ * @param {{kind: string, title: string, message: string, link?: string, speechText?: string}} evt
+ * @param {string} [alertsPath]
+ * @returns {Promise<object>}
+ */
+export async function pushAlertEvent(evt, alertsPath = DEFAULT_ALERTS_PATH) {
+  return withStateLock(async () => {
+    const state = await getAlertState(alertsPath);
+    const event = pushEvent(state, evt);
+    await saveAlertState(state, alertsPath);
+    return event;
+  });
+}
+
 let monitorTimer = null;
 
 /**

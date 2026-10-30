@@ -158,6 +158,8 @@ class JarvisHudController {
       addWatchlistBtn: document.getElementById('addWatchlistBtn'),
       addAlertBtn: document.getElementById('addAlertBtn'),
       toggleQuakeAlertBtn: document.getElementById('toggleQuakeAlertBtn'),
+      toggleAutoBriefingBtn: document.getElementById('toggleAutoBriefingBtn'),
+      toggleServiceSentinelBtn: document.getElementById('toggleServiceSentinelBtn'),
       focusLayoutBtn: document.getElementById('focusLayoutBtn'),
       vaultListContainer: document.getElementById('vaultListContainer'),
 
@@ -621,6 +623,12 @@ class JarvisHudController {
     if (this.dom.toggleQuakeAlertBtn) {
       this.dom.toggleQuakeAlertBtn.addEventListener('click', () => this.handleToggleQuakeAlerts());
     }
+    if (this.dom.toggleAutoBriefingBtn) {
+      this.dom.toggleAutoBriefingBtn.addEventListener('click', () => this.handleToggleAutoBriefing());
+    }
+    if (this.dom.toggleServiceSentinelBtn) {
+      this.dom.toggleServiceSentinelBtn.addEventListener('click', () => this.handleToggleServiceSentinel());
+    }
 
     // Tactical Voice Countdown Timer
     document.querySelectorAll('.timer-preset-btn').forEach((btn) => {
@@ -837,6 +845,47 @@ class JarvisHudController {
     }
   }
 
+  async handleToggleAutoBriefing() {
+    const nextState = !this.dom.toggleAutoBriefingBtn.classList.contains('active');
+    this._ensureNotificationPermission();
+    try {
+      const res = await fetch('/api/automation/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          morningBriefing: { enabled: nextState },
+          endOfDayDebrief: { enabled: nextState }
+        })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const isEnabled = Boolean(data.settings?.morningBriefing?.enabled);
+      this._updateToggleChip(this.dom.toggleAutoBriefingBtn, isEnabled);
+    } catch (error) {
+      console.warn('[J.A.R.V.I.S.] Failed to update auto briefing setting:', error);
+    }
+  }
+
+  async handleToggleServiceSentinel() {
+    const nextState = !this.dom.toggleServiceSentinelBtn.classList.contains('active');
+    this._ensureNotificationPermission();
+    try {
+      const res = await fetch('/api/automation/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          serviceSentinel: { enabled: nextState }
+        })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const isEnabled = Boolean(data.settings?.serviceSentinel?.enabled);
+      this._updateToggleChip(this.dom.toggleServiceSentinelBtn, isEnabled);
+    } catch (error) {
+      console.warn('[J.A.R.V.I.S.] Failed to update service sentinel setting:', error);
+    }
+  }
+
   /**
    * Polls the server sentinel for price alerts and new alert events, then announces them.
    */
@@ -881,16 +930,37 @@ class JarvisHudController {
   _announceSentinelEvent(evt) {
     const honorific = this.dom.honorificInput?.value.trim() || 'Sir';
     const isQuake = evt.kind === 'earthquake';
-    const spoken = `${honorific}，${evt.message}`;
+    const isBriefing = evt.kind === 'morning_briefing';
+    const isDebrief = evt.kind === 'end_of_day_debrief';
+    const isService = evt.kind === 'service_alert';
+
+    let sender = 'J.A.R.V.I.S. // PRICE SENTINEL';
+    let badge = 'PRICE ALERT';
+
+    if (isQuake) {
+      sender = 'J.A.R.V.I.S. // SEISMIC SENTINEL';
+      badge = 'EARTHQUAKE ALERT';
+    } else if (isBriefing) {
+      sender = 'J.A.R.V.I.S. // AUTONOMOUS BRIEFING';
+      badge = 'SCHEDULED BRIEFING';
+    } else if (isDebrief) {
+      sender = 'J.A.R.V.I.S. // TACTICAL DEBRIEF';
+      badge = 'END-OF-DAY REPORT';
+    } else if (isService) {
+      sender = 'J.A.R.V.I.S. // SERVICE SENTINEL';
+      badge = 'PORT HEALTH';
+    }
+
+    const spoken = evt.speechText || `${honorific}，${evt.message}`;
 
     this.audio.playBootSequence();
     this.appendMessage({
       role: 'assistant',
-      sender: isQuake ? 'J.A.R.V.I.S. // SEISMIC SENTINEL' : 'J.A.R.V.I.S. // PRICE SENTINEL',
-      content: `${evt.title}\n${spoken}`,
+      sender,
+      content: `${evt.title}\n${evt.message}`,
       speechText: spoken,
-      badge: isQuake ? 'EARTHQUAKE ALERT' : 'PRICE ALERT',
-      sources: evt.link ? [{ title: evt.title, link: evt.link, source: isQuake ? 'USGS' : 'MARKET' }] : []
+      badge,
+      sources: evt.link ? [{ title: evt.title, link: evt.link, source: 'SENTINEL' }] : []
     });
     setTimeout(() => this.audio.enqueueSpeechSegment(spoken), 600);
 
@@ -1442,6 +1512,18 @@ class JarvisHudController {
         tag: 'SEISMIC',
         action: () =>
           this.handleSendMessage('JARVIS，請幫我查詢台灣附近最近一週的地震紀錄，有沒有比較大的地震？')
+      },
+      {
+        title: '🌆 End-of-Day Tactical Debrief & Markdown Export (下班工作回顧與總結)',
+        tag: 'AUTOMATION',
+        action: () =>
+          this.handleSendMessage('JARVIS，請為我生成今日工作總結與下班戰術回顧 (End-of-Day Tactical Debrief)，核對今日任務並匯出戰術日誌。')
+      },
+      {
+        title: '🌐 Check Localhost Dev Services Health (檢查本機開發伺服器與 Ollama 心跳)',
+        tag: 'SENTINEL',
+        action: () =>
+          this.handleSendMessage('JARVIS，請執行本機連接埠與資安掃描，檢查 Ollama 與本地開發服務健康狀態。')
       },
       {
         title: '📚 Search ArXiv Latest AI & LLM Research Papers (搜尋最新 ArXiv AI 論文)',

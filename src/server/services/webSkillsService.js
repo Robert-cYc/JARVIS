@@ -12,6 +12,7 @@ import {
   detectConversionIntent,
   executeConversionSkill
 } from './conversionService.js';
+import { generateEndOfDayDebrief } from './automationService.js';
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -1134,6 +1135,15 @@ export function detectWebSkillIntent(userMessage, forceWebSearch = false) {
     return { intent: 'morning_briefing', query: text };
   }
 
+  // 0.05 Check for End-of-Day Tactical Debrief protocol
+  if (
+    /(今日工作總結|工作總結|今日總結|下班總結|今日回顧|戰術回顧|debrief|end\s*of\s*day|daily\s*wrap\s*up)/i.test(
+      text
+    )
+  ) {
+    return { intent: 'end_of_day_debrief', query: text };
+  }
+
   // 0.1 Check for Cyber-Security / Localhost Port & Network Latency Scan
   if (
     /(資安掃描|掃描.*(?:port|連接埠|埠)|port\s+scan|security\s+scan|network\s+scan|網路延遲|本機服務|veronica\s+protocol|維羅妮卡)/i.test(
@@ -1300,6 +1310,22 @@ export async function executeWebSkillForMessage(
       skill: 'morning_briefing',
       items: res.items || [],
       contextBlock: res.summaryText
+    };
+  }
+
+  if (detected.intent === 'end_of_day_debrief') {
+    const res = await generateEndOfDayDebrief({ saveToFile: true });
+    return {
+      executed: true,
+      skill: 'end_of_day_debrief',
+      items: [
+        {
+          title: `🌆 下班戰術日誌儲存完畢 (${res.filePath ? '已寫入 reports/' : 'HUD'})`,
+          link: '#',
+          source: 'Stark Debrief Engine'
+        }
+      ],
+      contextBlock: res.markdownReport
     };
   }
 

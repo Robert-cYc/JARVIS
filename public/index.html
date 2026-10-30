@@ -294,7 +294,7 @@
                 class="hud-input"
                 placeholder="Task, memory, ticker (0050), or alert (0050 > 180)..."
               />
-              <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px">
+              <div class="vault-btn-grid">
                 <button id="addTaskBtn" type="button" class="hud-btn" title="Add To-Do Task">
                   +TASK
                 </button>
@@ -558,6 +558,22 @@
                 <span>QUAKE ALERT</span>
                 <strong>ON</strong>
               </div>
+              <div
+                id="toggleAutoBriefingBtn"
+                class="toggle-chip active"
+                title="Autonomous Morning Briefing & End-of-Day Debrief Automation (08:00 晨報 & 18:00 下班工作回顧)"
+              >
+                <span>AUTO BRIEF</span>
+                <strong>ON</strong>
+              </div>
+              <div
+                id="toggleServiceSentinelBtn"
+                class="toggle-chip active"
+                title="Localhost Dev Server & Ollama Port Sentinel (本機服務心跳與離線監控)"
+              >
+                <span>SVC SENTINEL</span>
+                <strong>ON</strong>
+              </div>
             </div>
 
             <div class="quick-directives">
@@ -568,6 +584,13 @@
                 data-prompt="早安 JARVIS，請為我進行今日晨間綜合簡報（包含高雄與台北即時天氣、黃金金價漲勢、台美股金融行情、台灣與科技頭條新聞以及我的待辦事項）。"
               >
                 🌅 ENGAGE MORNING BRIEFING (早安綜合簡報)
+              </button>
+              <button
+                type="button"
+                class="directive-btn"
+                data-prompt="JARVIS，請為我生成今日工作總結與下班戰術回顧 (End-of-Day Tactical Debrief)，核對今日任務並匯出戰術日誌。"
+              >
+                &gt; 🌆 今日工作總結與戰術日誌匯出 (Debrief)
               </button>
               <button
                 type="button"

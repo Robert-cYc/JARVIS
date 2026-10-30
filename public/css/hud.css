@@ -755,6 +755,23 @@ body.focus-layout .hud-main > .hud-panel {
   gap: 5px;
 }
 
+.vault-btn-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+}
+
+.vault-btn-grid .hud-btn {
+  padding: 6px 4px;
+  font-size: 0.65rem;
+  letter-spacing: 0.5px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .vault-list {
   display: flex;
   flex-direction: column;

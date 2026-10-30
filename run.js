@@ -7,8 +7,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createServer } from './src/server/app.js';
 import { getOllamaStatus } from './src/server/services/llmService.js';
 import { getVaultState } from './src/server/services/memoryVaultService.js';
-import { startAlertMonitor, stopAlertMonitor } from './src/server/services/alertService.js';
+import { startAlertMonitor, stopAlertMonitor, pushAlertEvent } from './src/server/services/alertService.js';
 import { fetchAlertQuotes } from './src/server/services/webSkillsService.js';
+import { startAutomationScheduler, stopAutomationScheduler } from './src/server/services/automationService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -329,6 +330,21 @@ export async function bootJarvisSystem(rawArgv = process.argv.slice(2)) {
   // Stark Sentinel: background price alert & Taiwan earthquake monitor (every 60s)
   startAlertMonitor({ fetchQuotes: fetchAlertQuotes, intervalMs: 60000 });
   server.once('close', () => stopAlertMonitor());
+
+  // Stark Automation: autonomous morning briefing, debrief & service health monitor
+  startAutomationScheduler({
+    onEvent: async (evt) => {
+      console.log(`[J.A.R.V.I.S. AUTOMATION] Triggered: ${evt.title}`);
+      await pushAlertEvent({
+        kind: evt.kind,
+        title: evt.title,
+        message: evt.message,
+        speechText: evt.speechText
+      });
+    },
+    intervalMs: 30000
+  });
+  server.once('close', () => stopAutomationScheduler());
 
   console.log('----------------------------------------------------------------------');
   console.log(`[J.A.R.V.I.S. SYSTEM ONLINE] Holographic HUD active at: ${hudUrl}`);

@@ -41,8 +41,16 @@ import {
   deletePriceAlert,
   acknowledgeAlertEvents,
   updateAlertSettings,
-  fetchTaiwanEarthquakes
+  fetchTaiwanEarthquakes,
+  pushAlertEvent
 } from './services/alertService.js';
+import {
+  getAutomationState,
+  updateAutomationSettings,
+  generateScheduledMorningBriefing,
+  generateEndOfDayDebrief,
+  checkServiceHealth
+} from './services/automationService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -405,6 +413,39 @@ export function createServer() {
         const minMagnitude = Number(parsedUrl.searchParams.get('min')) || 4.0;
         const quakes = await fetchTaiwanEarthquakes({ feed: '2.5_week', minMagnitude });
         sendJson(res, 200, quakes);
+        return;
+      }
+
+      // --- Stark Automation: Morning Briefing, Debrief & Service Sentinel ---
+      if (req.method === 'GET' && pathname === '/api/automation') {
+        const state = await getAutomationState();
+        sendJson(res, 200, state);
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/automation/settings') {
+        const patch = await readJsonBody(req);
+        const state = await updateAutomationSettings(patch);
+        sendJson(res, 200, state);
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/automation/debrief') {
+        const debrief = await generateEndOfDayDebrief({ saveToFile: true });
+        sendJson(res, 200, debrief);
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/automation/briefing') {
+        const briefing = await generateScheduledMorningBriefing();
+        sendJson(res, 200, briefing);
+        return;
+      }
+
+      if (req.method === 'GET' && pathname === '/api/automation/services') {
+        const alerts = await checkServiceHealth();
+        const state = await getAutomationState();
+        sendJson(res, 200, { serviceStatus: state.serviceStatus, alerts });
         return;
       }
 
