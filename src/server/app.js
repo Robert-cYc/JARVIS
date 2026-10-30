@@ -30,7 +30,9 @@ import {
   deleteMemory,
   addTask,
   toggleTask,
-  deleteTask
+  deleteTask,
+  addWatchlistSymbol,
+  removeWatchlistSymbol
 } from './services/memoryVaultService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -233,16 +235,24 @@ export function createServer() {
       }
 
       if (req.method === 'GET' && pathname === '/api/skills/market') {
-        const market = await fetchMarketTelemetry();
+        const vault = await getVaultState();
+        const market = await fetchMarketTelemetry(
+          ['GC=F', '^TWII', '2330.TW', 'NVDA', 'AAPL', 'BTC-USD', 'TWD=X'],
+          vault.watchlist || []
+        );
         sendJson(res, 200, market);
         return;
       }
 
       if (req.method === 'GET' && pathname === '/api/skills/briefing') {
-        const city = parsedUrl.searchParams.get('city') || 'Taipei';
+        const city = parsedUrl.searchParams.get('city') || '台北,高雄';
         const vault = await getVaultState();
         const pendingTasks = (vault.tasks || []).filter((t) => !t.completed);
-        const briefing = await generateMorningBriefing({ city, pendingTasks });
+        const briefing = await generateMorningBriefing({
+          city,
+          pendingTasks,
+          customWatchlist: vault.watchlist || []
+        });
         sendJson(res, 200, briefing);
         return;
       }
@@ -317,6 +327,21 @@ export function createServer() {
       if (req.method === 'DELETE' && pathname === '/api/vault/task') {
         const id = parsedUrl.searchParams.get('id') || '';
         const state = await deleteTask(id);
+        sendJson(res, 200, state);
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/vault/watchlist') {
+        const { symbol } = await readJsonBody(req);
+        await addWatchlistSymbol(symbol);
+        const state = await getVaultState();
+        sendJson(res, 200, state);
+        return;
+      }
+
+      if (req.method === 'DELETE' && pathname === '/api/vault/watchlist') {
+        const symbol = parsedUrl.searchParams.get('symbol') || '';
+        const state = await removeWatchlistSymbol(symbol);
         sendJson(res, 200, state);
         return;
       }

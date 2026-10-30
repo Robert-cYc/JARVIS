@@ -2,6 +2,7 @@
  * Stark Industries Global Satellite Uplink — Web Surfing, Live News & Intelligence Skills
  */
 
+import { spawn } from 'node:child_process';
 import {
   runCyberSecurityScan,
   evaluateQuantumSandbox
@@ -319,11 +320,118 @@ export async function searchWebIntelligence(query, limit = 6) {
 }
 
 /**
- * Fetches and extracts readable text from a specific URL so JARVIS can read/summarize any webpage.
+ * Extracts a 11-character YouTube video ID from any YouTube URL.
+ * @param {string} url
+ * @returns {string | null}
+ */
+export function extractYoutubeVideoId(url) {
+  if (!url || typeof url !== 'string') return null;
+  const match = url.match(
+    /(?:youtube\.com\/(?:watch\?.*v=|shorts\/|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/i
+  );
+  return match ? match[1] : null;
+}
+
+/**
+ * Fetches YouTube video metadata, channel author, and description/transcript summary.
+ * @param {string} url
+ * @param {string} videoId
+ * @returns {Promise<{skill: string, url: string, title: string, content: string, items: Array<object>, summaryText: string}>}
+ */
+export async function fetchYoutubeVideoIntel(url, videoId) {
+  const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  let title = `YouTube Video (${videoId})`;
+  let author = 'YouTube Channel';
+  let description = '';
+
+  try {
+    const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(
+      canonicalUrl
+    )}&format=json`;
+    const [oembedRes, pageRes] = await Promise.all([
+      fetchWithTimeout(oembedUrl, 4500).catch(() => null),
+      fetchWithTimeout(canonicalUrl, 6000).catch(() => null)
+    ]);
+
+    if (oembedRes && oembedRes.ok) {
+      const oembed = await oembedRes.json();
+      if (oembed.title) title = oembed.title;
+      if (oembed.author_name) author = oembed.author_name;
+    }
+
+    if (pageRes && pageRes.ok) {
+      const html = await pageRes.text();
+      if (title.startsWith('YouTube Video')) {
+        const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        if (titleMatch) {
+          title = decodeHtmlEntities(titleMatch[1]).replace(/\s*-\s*YouTube$/i, '').trim();
+        }
+      }
+      const shortDescMatch = html.match(/"shortDescription":"((?:\\.|[^"\\])*)"/);
+      if (shortDescMatch) {
+        description = shortDescMatch[1]
+          .replace(/\\n/g, '\n')
+          .replace(/\\"/g, '"')
+          .slice(0, 2200);
+      } else {
+        const metaDesc = html.match(
+          /<meta\s+name=["']description["']\s+content=["']([\s\S]*?)["']/i
+        );
+        if (metaDesc) {
+          description = decodeHtmlEntities(metaDesc[1]);
+        }
+      }
+    }
+
+    const content = [
+      `Video Title: ${title}`,
+      `Channel / Creator: ${author}`,
+      `Video URL: ${canonicalUrl}`,
+      description ? `Video Description & Key Details:\n${description}` : ''
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    return {
+      skill: 'youtube_intel',
+      url: canonicalUrl,
+      title: `🎬 ${title} (${author})`,
+      content,
+      items: [
+        {
+          title: `🎬 YouTube: ${title} — ${author}`,
+          link: canonicalUrl,
+          source: 'YouTube Intelligence',
+          snippet: description.slice(0, 180)
+        }
+      ],
+      summaryText: `[Stark YouTube Video Intelligence]:\n${content}`
+    };
+  } catch (error) {
+    return {
+      skill: 'youtube_intel',
+      url: canonicalUrl,
+      title,
+      content: '',
+      items: [{ title, link: canonicalUrl, source: 'YouTube' }],
+      summaryText: `YouTube telemetry error: ${
+        error instanceof Error ? error.message : 'Failed'
+      }`
+    };
+  }
+}
+
+/**
+ * Fetches and extracts readable text from a specific URL so JARVIS can read/summarize any webpage or YouTube video.
  * @param {string} url
  * @returns {Promise<{skill: string, url: string, title: string, content: string, summaryText: string}>}
  */
 export async function browseUrlContent(url) {
+  const ytId = extractYoutubeVideoId(url);
+  if (ytId) {
+    return fetchYoutubeVideoIntel(url, ytId);
+  }
+
   try {
     const response = await fetchWithTimeout(url, 7500);
     if (!response.ok) {
@@ -354,6 +462,20 @@ export async function browseUrlContent(url) {
       }`
     };
   }
+}
+
+/**
+ * Maps US AQI value to a human-readable health advisory in Traditional Chinese & English.
+ * @param {number | null | undefined} aqi
+ * @returns {string}
+ */
+export function describeAqiLevel(aqi) {
+  if (typeof aqi !== 'number' || Number.isNaN(aqi)) return '良好 (Good)';
+  if (aqi <= 50) return '良好 (Good)';
+  if (aqi <= 100) return '普通 (Moderate)';
+  if (aqi <= 150) return '對敏感族群不健康 (Unhealthy for Sensitive)';
+  if (aqi <= 200) return '不健康 (Unhealthy — 建議配戴口罩)';
+  return '危害等級 (Hazardous)';
 }
 
 /**
@@ -439,24 +561,52 @@ export async function fetchWeatherTelemetry(cityQuery = 'Taipei') {
       }
     }
 
-    const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=1`;
-    const res = await fetchWithTimeout(weatherUrl, 5500);
+    const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max&timezone=auto&forecast_days=1`;
+    const aqiUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi,pm2_5,uv_index&timezone=auto`;
+
+    const [res, aqiRes] = await Promise.all([
+      fetchWithTimeout(weatherUrl, 5500),
+      fetchWithTimeout(aqiUrl, 4500).catch(() => null)
+    ]);
     if (!res.ok) throw new Error(`Open-Meteo HTTP ${res.status}`);
 
     const data = await res.json();
+    const aqiData = aqiRes && aqiRes.ok ? await aqiRes.json().catch(() => ({})) : {};
     const cur = data.current || {};
     const daily = data.daily || {};
+    const aqiCur = aqiData.current || {};
+
     const condition = describeWeatherCode(cur.weather_code ?? 0);
     const rainProb = daily.precipitation_probability_max?.[0] ?? 0;
     const maxT = daily.temperature_2m_max?.[0] ?? cur.temperature_2m;
     const minT = daily.temperature_2m_min?.[0] ?? cur.temperature_2m;
+    const usAqi = typeof aqiCur.us_aqi === 'number' ? Math.round(aqiCur.us_aqi) : null;
+    const pm25 = typeof aqiCur.pm2_5 === 'number' ? Number(aqiCur.pm2_5.toFixed(1)) : null;
+    const uvIndex =
+      typeof aqiCur.uv_index === 'number'
+        ? Number(aqiCur.uv_index.toFixed(1))
+        : typeof daily.uv_index_max?.[0] === 'number'
+          ? Number(daily.uv_index_max[0].toFixed(1))
+          : null;
+    const aqiStatus = describeAqiLevel(usAqi);
+
+    const aqiLine =
+      usAqi !== null || pm25 !== null || uvIndex !== null
+        ? `\n- Air Quality & UV: AQI ${usAqi ?? 'N/A'} (${aqiStatus}) | PM2.5: ${
+            pm25 ?? 'N/A'
+          } μg/m³ | UV Index: ${uvIndex ?? 'N/A'}`
+        : '';
 
     const summary =
-      `[Live Weather Telemetry — ${resolvedName}]\n` +
+      `[Live Weather & Air Quality Telemetry — ${resolvedName}]\n` +
       `- Condition: ${condition}\n` +
       `- Current Temp: ${cur.temperature_2m}°C (Feels like ${cur.apparent_temperature}°C)\n` +
       `- Daily Range: ${minT}°C ~ ${maxT}°C\n` +
-      `- Rain Probability: ${rainProb}% | Humidity: ${cur.relative_humidity_2m}% | Wind: ${cur.wind_speed_10m} km/h`;
+      `- Rain Probability: ${rainProb}% | Humidity: ${cur.relative_humidity_2m}% | Wind: ${cur.wind_speed_10m} km/h` +
+      aqiLine;
+
+    const aqiBadge =
+      usAqi !== null ? ` | AQI ${usAqi} (PM2.5: ${pm25 ?? '--'}) | UV ${uvIndex ?? '--'}` : '';
 
     return {
       city: resolvedName,
@@ -469,12 +619,16 @@ export async function fetchWeatherTelemetry(cityQuery = 'Taipei') {
         maxTempC: maxT,
         rainProbPercent: rainProb,
         humidityPercent: cur.relative_humidity_2m,
-        windKmh: cur.wind_speed_10m
+        windKmh: cur.wind_speed_10m,
+        usAqi,
+        pm25,
+        uvIndex,
+        aqiStatus
       },
       item: {
-        title: `${resolvedName}: ${cur.temperature_2m}°C (${condition}) | 高低溫 ${minT}~${maxT}°C | 降雨機率 ${rainProb}%`,
+        title: `${resolvedName}: ${cur.temperature_2m}°C (${condition}) | 降雨 ${rainProb}%${aqiBadge}`,
         link: `https://www.windy.com/${lat}/${lon}?${lat},${lon},10`,
-        source: 'Open-Meteo Satellite'
+        source: 'Open-Meteo Weather & AQI'
       },
       summary
     };
@@ -549,10 +703,18 @@ export async function fetchBotGoldRates() {
  * @returns {Promise<{skill: string, quotes: Array<object>, items: Array<object>, summaryText: string}>}
  */
 export async function fetchMarketTelemetry(
-  symbols = ['GC=F', '^TWII', '2330.TW', 'NVDA', 'AAPL', 'BTC-USD', 'TWD=X']
+  symbols = ['GC=F', '^TWII', '2330.TW', 'NVDA', 'AAPL', 'BTC-USD', 'TWD=X'],
+  customWatchlist = []
 ) {
   const quotes = [];
   const items = [];
+
+  const mergedSymbols = [
+    ...new Set([
+      ...symbols,
+      ...(Array.isArray(customWatchlist) ? customWatchlist : [])
+    ])
+  ];
 
   const labelMap = {
     'GC=F': '🥇 國際黃金現貨/期貨 (Gold Spot USD/oz)',
@@ -561,6 +723,11 @@ export async function fetchMarketTelemetry(
     '2330.TW': '台積電 (TSMC 2330)',
     '2317.TW': '鴻海 (Foxconn 2317)',
     '2454.TW': '聯發科 (MediaTek 2454)',
+    '0050.TW': '元大台灣50 (0050 ETF)',
+    '0056.TW': '元大高股息 (0056 ETF)',
+    '00878.TW': '國泰永續高股息 (00878 ETF)',
+    '00919.TW': '群益台灣精選高息 (00919 ETF)',
+    '00929.TW': '復華台灣科技優息 (00929 ETF)',
     NVDA: 'NVIDIA (輝達 NVDA)',
     AAPL: 'Apple (蘋果 AAPL)',
     TSLA: 'Tesla (特斯拉 TSLA)',
@@ -570,12 +737,12 @@ export async function fetchMarketTelemetry(
     'TWD=X': 'USD/TWD (美金兌台幣匯率)'
   };
 
-  const botGoldPromise = symbols.includes('GC=F')
+  const botGoldPromise = mergedSymbols.includes('GC=F')
     ? fetchBotGoldRates()
     : Promise.resolve(null);
 
   await Promise.all(
-    symbols.slice(0, 8).map(async (sym) => {
+    mergedSymbols.slice(0, 12).map(async (sym) => {
       try {
         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
           sym
@@ -716,11 +883,15 @@ export async function fetchMarketTelemetry(
  */
 export async function generateMorningBriefing({
   city = '台北,高雄',
-  pendingTasks = []
+  pendingTasks = [],
+  customWatchlist = []
 } = {}) {
   const [weather, markets, twNews, techNews] = await Promise.all([
     fetchWeatherTelemetry(city),
-    fetchMarketTelemetry(['GC=F', '^TWII', '2330.TW', 'NVDA', 'BTC-USD', 'TWD=X']),
+    fetchMarketTelemetry(
+      ['GC=F', '^TWII', '2330.TW', 'NVDA', 'BTC-USD', 'TWD=X'],
+      customWatchlist
+    ),
     fetchTodaysNews({ edition: 'tw', limit: 4 }),
     fetchTodaysNews({ edition: 'tech', limit: 3 })
   ]);
@@ -988,8 +1159,12 @@ export function detectWebSkillIntent(userMessage, forceWebSearch = false) {
     return { intent: 'url', url: urlMatch[0], query: text };
   }
 
-  // 2. Check for Weather Telemetry intent
-  if (/(天氣|氣溫|降雨|下雨|帶傘|氣象|weather|temperature|forecast)/i.test(text)) {
+  // 2. Check for Weather, Air Quality (AQI/PM2.5) & UV Telemetry intent
+  if (
+    /(天氣|氣溫|降雨|下雨|帶傘|氣象|空氣品質|空汙|紫外線|\bAQI\b|PM2\.?5|UV\s*index|weather|temperature|forecast|air\s+quality)/i.test(
+      text
+    )
+  ) {
     const cityMatches = text.match(
       /(台北|臺北|新北|桃園|新竹|台中|臺中|台南|臺南|高雄|東京|倫敦|紐約|Taipei|Kaohsiung|Tokyo|London|New York)/gi
     );
@@ -1000,9 +1175,9 @@ export function detectWebSkillIntent(userMessage, forceWebSearch = false) {
     };
   }
 
-  // 3. Check for Gold / Stock / Crypto / FX Market intent
+  // 3. Check for Gold / Stock / Crypto / FX / Watchlist Market intent
   if (
-    /(黃金|金價|貴金屬|白銀|股價|股市|大盤|台積電|輝達|比特幣|以太幣|匯率|美金|台幣|\bXAU\b|\bGC=F\b|\bNVDA\b|\bTSMC\b|\bAAPL\b|\bTSLA\b|\bBTC\b|\bETH\b|gold\s+price|stock\s+price|crypto|exchange\s+rate)/i.test(
+    /(黃金|金價|貴金屬|白銀|股價|股市|大盤|自選股|投資組合|台積電|輝達|比特幣|以太幣|匯率|美金|台幣|\b0050\b|\b0056\b|\b00878\b|\b00919\b|\bXAU\b|\bGC=F\b|\bNVDA\b|\bTSMC\b|\bAAPL\b|\bTSLA\b|\bBTC\b|\bETH\b|gold\s+price|stock\s+price|watchlist|crypto|exchange\s+rate)/i.test(
       text
     )
   ) {
@@ -1065,7 +1240,7 @@ export function detectWebSkillIntent(userMessage, forceWebSearch = false) {
  */
 export async function executeWebSkillForMessage(
   userMessage,
-  { forceWebSearch = false, pendingTasks = [] } = {}
+  { forceWebSearch = false, pendingTasks = [], customWatchlist = [] } = {}
 ) {
   const detected = detectWebSkillIntent(userMessage, forceWebSearch);
 
@@ -1074,7 +1249,11 @@ export async function executeWebSkillForMessage(
   }
 
   if (detected.intent === 'morning_briefing') {
-    const res = await generateMorningBriefing({ city: '台北,高雄', pendingTasks });
+    const res = await generateMorningBriefing({
+      city: '台北,高雄',
+      pendingTasks,
+      customWatchlist
+    });
     return {
       executed: true,
       skill: 'morning_briefing',
@@ -1144,7 +1323,10 @@ export async function executeWebSkillForMessage(
   }
 
   if (detected.intent === 'market') {
-    const res = await fetchMarketTelemetry();
+    const res = await fetchMarketTelemetry(
+      ['GC=F', '^TWII', '2330.TW', 'NVDA', 'AAPL', 'BTC-USD', 'TWD=X'],
+      customWatchlist
+    );
     return {
       executed: true,
       skill: 'market_telemetry',
@@ -1195,6 +1377,71 @@ export async function executeWebSkillForMessage(
  * @param {string} userMessage
  * @returns {{executed: boolean, label: string, url: string} | null}
  */
+const LOCAL_APP_CATALOG = [
+  {
+    appId: 'notepad',
+    label: 'Notepad (記事本)',
+    pattern: /\bnotepad\b|記事本|文字編輯器/i,
+    winCmd: 'notepad.exe',
+    macApp: 'TextEdit',
+    linuxCmd: 'gedit'
+  },
+  {
+    appId: 'calculator',
+    label: 'Calculator (小算盤)',
+    pattern: /\b(?:calculator|calc)\b|小算盤|計算機/i,
+    winCmd: 'calc.exe',
+    macApp: 'Calculator',
+    linuxCmd: 'gnome-calculator'
+  },
+  {
+    appId: 'paint',
+    label: 'MS Paint (小畫家)',
+    pattern: /\b(?:mspaint|paint)\b|小畫家/i,
+    winCmd: 'mspaint.exe',
+    macApp: 'Preview',
+    linuxCmd: 'gimp'
+  },
+  {
+    appId: 'explorer',
+    label: 'File Explorer (檔案總管)',
+    pattern: /\b(?:file\s*explorer|explorer)\b|檔案總管|資料夾/i,
+    winCmd: 'explorer.exe',
+    macApp: 'Finder',
+    linuxCmd: 'xdg-open'
+  },
+  {
+    appId: 'taskmgr',
+    label: 'Task Manager (工作管理員)',
+    pattern: /\b(?:task\s*manager|taskmgr)\b|工作管理員/i,
+    winCmd: 'taskmgr.exe',
+    macApp: 'Activity Monitor',
+    linuxCmd: 'gnome-system-monitor'
+  },
+  {
+    appId: 'cmd',
+    label: 'Command Prompt / Terminal (終端機)',
+    pattern: /\b(?:command\s*prompt|cmd|terminal|powershell)\b|終端機|命令提示字元/i,
+    winCmd: 'cmd.exe',
+    winArgs: ['/c', 'start', 'cmd.exe'],
+    macApp: 'Terminal',
+    linuxCmd: 'x-terminal-emulator'
+  },
+  {
+    appId: 'snippingtool',
+    label: 'Snipping Tool (截圖工具)',
+    pattern: /\b(?:snipping\s*tool|snip)\b|截圖工具|剪取工具/i,
+    winCmd: 'snippingtool.exe',
+    macApp: 'Screenshot',
+    linuxCmd: 'gnome-screenshot'
+  }
+];
+
+/**
+ * Detects voice/text commands to launch local desktop applications, websites, maps, or YouTube searches.
+ * @param {string} userMessage
+ * @returns {{executed: boolean, type?: 'web' | 'local_app', label: string, url?: string, apps?: Array<{appId: string, label: string}>} | null}
+ */
 export function detectLauncherCommand(userMessage) {
   if (!userMessage || typeof userMessage !== 'string') return null;
   const text = userMessage.trim();
@@ -1207,6 +1454,7 @@ export function detectLauncherCommand(userMessage) {
     const q = ytSearch[1].trim();
     return {
       executed: true,
+      type: 'web',
       label: `YouTube: ${q}`,
       url: `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`
     };
@@ -1220,13 +1468,26 @@ export function detectLauncherCommand(userMessage) {
     const q = mapSearch[1].trim();
     return {
       executed: true,
+      type: 'web',
       label: `Google Maps: ${q}`,
       url: `https://www.google.com/maps/search/${encodeURIComponent(q)}`
     };
   }
 
-  // 3. Direct App / Site Launch ("打開 YouTube / GitHub / Gmail / Maps")
-  if (/(打開|開啟|啟動|open\s+|launch\s+)/i.test(text)) {
+  // 3. Direct Desktop App or Website Launch ("打開記事本、小算盤", "open notepad, calculator", "打開 YouTube")
+  if (/(打開|開啟|啟動|呼叫|\bopen\b|\blaunch\b|\bstart\b|\brun\b)/i.test(text)) {
+    // 3a. Check allowlisted local desktop OS applications (supports launching multiple apps at once)
+    const matchedLocalApps = LOCAL_APP_CATALOG.filter((app) => app.pattern.test(text));
+    if (matchedLocalApps.length > 0) {
+      return {
+        executed: true,
+        type: 'local_app',
+        label: matchedLocalApps.map((a) => a.label).join(' + '),
+        apps: matchedLocalApps.map((a) => ({ appId: a.appId, label: a.label }))
+      };
+    }
+
+    // 3b. Check web targets
     const targets = [
       { pattern: /youtube/i, label: 'YouTube', url: 'https://www.youtube.com' },
       { pattern: /github/i, label: 'GitHub', url: 'https://github.com' },
@@ -1237,8 +1498,106 @@ export function detectLauncherCommand(userMessage) {
     ];
     for (const t of targets) {
       if (t.pattern.test(text)) {
-        return { executed: true, label: t.label, url: t.url };
+        return { executed: true, type: 'web', label: t.label, url: t.url };
       }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Safely spawns allowlisted local OS applications (e.g. Notepad, Calculator, Paint) in detached mode.
+ * @param {{type?: string, apps?: Array<{appId: string, label: string}>}} launchAction
+ * @returns {boolean}
+ */
+export function executeLocalAppLaunch(launchAction) {
+  if (!launchAction || launchAction.type !== 'local_app' || !Array.isArray(launchAction.apps)) {
+    return false;
+  }
+
+  let launchedAny = false;
+  for (const item of launchAction.apps) {
+    const spec = LOCAL_APP_CATALOG.find((a) => a.appId === item.appId);
+    if (!spec) continue;
+
+    try {
+      if (process.platform === 'win32') {
+        const child = spawn(spec.winCmd, spec.winArgs || [], {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: false
+        });
+        child.on('error', () => {});
+        child.unref();
+      } else if (process.platform === 'darwin') {
+        const child = spawn('open', ['-a', spec.macApp], {
+          detached: true,
+          stdio: 'ignore'
+        });
+        child.on('error', () => {});
+        child.unref();
+      } else {
+        const child = spawn(spec.linuxCmd, [], {
+          detached: true,
+          stdio: 'ignore'
+        });
+        child.on('error', () => {});
+        child.unref();
+      }
+      launchedAny = true;
+    } catch {
+      // Ignore individual spawn errors
+    }
+  }
+
+  return launchedAny;
+}
+
+/**
+ * Detects natural-language or voice commands to start a countdown timer.
+ * Examples: "JARVIS，幫我計時 10 分鐘", "倒數 90 秒", "set a timer for 5 minutes"
+ * @param {string} userMessage
+ * @returns {{executed: boolean, durationSeconds: number, label: string} | null}
+ */
+export function detectTimerCommand(userMessage) {
+  if (!userMessage || typeof userMessage !== 'string') return null;
+  const text = userMessage.trim();
+
+  // Chinese & English timer pattern
+  const zhMatch = text.match(
+    /(?:計時|倒數|設定計時器|定時)\s*(\d+(?:\.\d+)?)\s*(小時|鐘頭|分鐘|分|秒鐘|秒)/i
+  );
+  if (zhMatch) {
+    const val = parseFloat(zhMatch[1]);
+    const unit = zhMatch[2];
+    if (val > 0) {
+      let seconds = Math.round(val * 60);
+      if (unit.startsWith('秒')) seconds = Math.round(val);
+      if (unit.includes('時') || unit.includes('鐘頭')) seconds = Math.round(val * 3600);
+      return {
+        executed: true,
+        durationSeconds: Math.min(86400, Math.max(1, seconds)),
+        label: `${val} ${unit}`
+      };
+    }
+  }
+
+  const enMatch = text.match(
+    /(?:set\s+(?:a\s+)?timer\s+(?:for\s+)?|start\s+(?:a\s+)?timer\s+(?:for\s+)?|countdown\s+(?:for\s+)?)(\d+(?:\.\d+)?)\s*(hours?|hrs?|minutes?|mins?|seconds?|secs?)/i
+  );
+  if (enMatch) {
+    const val = parseFloat(enMatch[1]);
+    const unit = enMatch[2].toLowerCase();
+    if (val > 0) {
+      let seconds = Math.round(val * 60);
+      if (unit.startsWith('s')) seconds = Math.round(val);
+      if (unit.startsWith('h')) seconds = Math.round(val * 3600);
+      return {
+        executed: true,
+        durationSeconds: Math.min(86400, Math.max(1, seconds)),
+        label: `${val} ${unit}`
+      };
     }
   }
 

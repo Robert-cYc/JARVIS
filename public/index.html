@@ -275,23 +275,26 @@
               </div>
             </div>
 
-            <!-- Quick Add Task or Memory -->
+            <!-- Quick Add Task, Memory, or Watchlist Ticker -->
             <div class="field-group">
               <label class="field-label">
-                <span>PERSISTENT TO-DO &amp; MEMORY VAULT</span>
+                <span>PERSISTENT TO-DO, MEMORY &amp; WATCHLIST VAULT</span>
               </label>
               <div style="display: flex; gap: 5px">
                 <input
                   id="vaultInput"
                   type="text"
                   class="hud-input"
-                  placeholder="Add task or memory fact..."
+                  placeholder="Task, memory, or ticker (0050)..."
                 />
                 <button id="addTaskBtn" type="button" class="hud-btn" title="Add To-Do Task">
                   +TASK
                 </button>
                 <button id="addMemoryBtn" type="button" class="hud-btn amber" title="Save Memory Fact">
                   +MEM
+                </button>
+                <button id="addWatchlistBtn" type="button" class="hud-btn" title="Add Stock/ETF Ticker to Watchlist">
+                  +STOCK
                 </button>
               </div>
             </div>
@@ -500,6 +503,14 @@
                 <span>HOURLY CHIME</span>
                 <strong>ON</strong>
               </div>
+              <div
+                id="toggleAmbientHumBtn"
+                class="toggle-chip"
+                title="Stark Workshop Ambient Reactor Hum &amp; Brown Noise (史塔克實驗室反應爐背景白噪音)"
+              >
+                <span>AMBIENT HUM</span>
+                <strong>OFF</strong>
+              </div>
               <div id="testVoiceBtn" class="toggle-chip">
                 <span>VOICE CHECK</span>
                 <strong>TEST</strong>
@@ -544,9 +555,9 @@
               <button
                 type="button"
                 class="directive-btn"
-                data-prompt="JARVIS，請幫我查詢高雄今天的即時天氣、氣溫、體感溫度與降雨機率，出門需要帶傘或防曬嗎？"
+                data-prompt="JARVIS，請幫我查詢高雄今天的即時天氣、氣溫、降雨機率以及空氣品質 (AQI / PM2.5) 與紫外線指數，出門需要帶傘或防曬嗎？"
               >
-                &gt; ☀️ 高雄即時天氣與降雨預報 (Live)
+                &gt; ☀️ 高雄天氣 / 空氣品質 AQI / 紫外線 (Live)
               </button>
               <button
                 type="button"

@@ -5,6 +5,9 @@ import {
   extractReadableTextFromHtml,
   parseRssItems,
   parseBotGoldHtml,
+  extractYoutubeVideoId,
+  describeAqiLevel,
+  detectTimerCommand,
   detectWebSkillIntent,
   detectLauncherCommand
 } from '../src/server/services/webSkillsService.js';
@@ -117,6 +120,18 @@ describe('J.A.R.V.I.S. Web Skills & News Service', () => {
     const ghCmd = detectLauncherCommand('幫我打開 GitHub');
     assert.ok(ghCmd);
     assert.equal(ghCmd.url, 'https://github.com');
+
+    const localAppsEn = detectLauncherCommand('JARVIS, open notepad, calculator');
+    assert.ok(localAppsEn);
+    assert.equal(localAppsEn.type, 'local_app');
+    assert.equal(localAppsEn.apps.length, 2);
+    assert.equal(localAppsEn.apps[0].appId, 'notepad');
+    assert.equal(localAppsEn.apps[1].appId, 'calculator');
+
+    const localAppsZh = detectLauncherCommand('JARVIS，請幫我打開記事本跟小算盤');
+    assert.ok(localAppsZh);
+    assert.equal(localAppsZh.type, 'local_app');
+    assert.equal(localAppsZh.apps.length, 2);
   });
 
   it('parses Bank of Taiwan (BOT) Gold Passbook HTML rates accurately', () => {
@@ -136,5 +151,34 @@ describe('J.A.R.V.I.S. Web Skills & News Service', () => {
     assert.equal(parsed.buyPerGramTwd, 4173);
     assert.equal(parsed.sellPerQianTwd, 15825);
     assert.equal(parsed.buyPerQianTwd, 15649);
+  });
+
+  it('extracts YouTube video IDs, describes AQI levels, and detects voice timer commands', () => {
+    assert.equal(
+      extractYoutubeVideoId('https://www.youtube.com/watch?v=dQw4w9WgXcQ'),
+      'dQw4w9WgXcQ'
+    );
+    assert.equal(
+      extractYoutubeVideoId('https://youtu.be/dQw4w9WgXcQ?si=123'),
+      'dQw4w9WgXcQ'
+    );
+    assert.equal(extractYoutubeVideoId('https://example.com/page'), null);
+
+    assert.equal(describeAqiLevel(35), '良好 (Good)');
+    assert.equal(describeAqiLevel(75), '普通 (Moderate)');
+    assert.equal(describeAqiLevel(165), '不健康 (Unhealthy — 建議配戴口罩)');
+
+    const aqiIntent = detectWebSkillIntent('JARVIS，請問高雄今天的空氣品質 AQI 與 PM2.5 如何？');
+    assert.equal(aqiIntent.intent, 'weather');
+    assert.equal(aqiIntent.query, '高雄');
+
+    const timerZh = detectTimerCommand('JARVIS，幫我計時 10 分鐘');
+    assert.ok(timerZh);
+    assert.equal(timerZh.executed, true);
+    assert.equal(timerZh.durationSeconds, 600);
+
+    const timerEn = detectTimerCommand('JARVIS, set a timer for 90 seconds');
+    assert.ok(timerEn);
+    assert.equal(timerEn.durationSeconds, 90);
   });
 });

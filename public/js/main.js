@@ -139,6 +139,7 @@ class JarvisHudController {
       toggleResonanceBtn: document.getElementById('toggleResonanceBtn'),
       toggleSfxBtn: document.getElementById('toggleSfxBtn'),
       toggleHourlyChimeBtn: document.getElementById('toggleHourlyChimeBtn'),
+      toggleAmbientHumBtn: document.getElementById('toggleAmbientHumBtn'),
       testVoiceBtn: document.getElementById('testVoiceBtn'),
       toggleWebSkillBtn: document.getElementById('toggleWebSkillBtn'),
       toggleForceSearchBtn: document.getElementById('toggleForceSearchBtn'),
@@ -150,6 +151,7 @@ class JarvisHudController {
       vaultInput: document.getElementById('vaultInput'),
       addTaskBtn: document.getElementById('addTaskBtn'),
       addMemoryBtn: document.getElementById('addMemoryBtn'),
+      addWatchlistBtn: document.getElementById('addWatchlistBtn'),
       vaultListContainer: document.getElementById('vaultListContainer'),
 
       attachmentBanner: document.getElementById('attachmentBanner'),
@@ -515,6 +517,13 @@ class JarvisHudController {
       });
     }
 
+    if (this.dom.toggleAmbientHumBtn) {
+      this.dom.toggleAmbientHumBtn.addEventListener('click', () => {
+        const active = this.audio.setAmbientHum(!this.audio.ambientHumEnabled);
+        this._updateToggleChip(this.dom.toggleAmbientHumBtn, active);
+      });
+    }
+
     if (this.dom.announceTimeBtn) {
       this.dom.announceTimeBtn.addEventListener('click', () => {
         this.announceCurrentTime(false);
@@ -575,12 +584,15 @@ class JarvisHudController {
       });
     }
 
-    // Memory Vault & To-Do List Controls
+    // Memory Vault, To-Do List & Custom Watchlist Controls
     if (this.dom.addTaskBtn) {
       this.dom.addTaskBtn.addEventListener('click', () => this.handleAddVaultTask());
     }
     if (this.dom.addMemoryBtn) {
       this.dom.addMemoryBtn.addEventListener('click', () => this.handleAddVaultMemory());
+    }
+    if (this.dom.addWatchlistBtn) {
+      this.dom.addWatchlistBtn.addEventListener('click', () => this.handleAddVaultWatchlist());
     }
 
     // File Upload & Drag-and-Drop Analyzer
@@ -1161,12 +1173,27 @@ class JarvisHudController {
           )
       },
       {
-        title: '☀️ Kaohsiung Live Weather & Forecast (高雄即時天氣、氣溫與降雨機率)',
-        tag: 'WEATHER',
+        title: '☀️ Kaohsiung Live Weather, AQI & UV Forecast (高雄天氣、空氣品質 AQI 與紫外線)',
+        tag: 'WEATHER + AQI',
         action: () =>
           this.handleSendMessage(
-            'JARVIS，請幫我查詢高雄今天的即時天氣、氣溫、體感溫度與降雨機率，出門需要帶傘或防曬嗎？'
+            'JARVIS，請幫我查詢高雄今天的即時天氣、氣溫、降雨機率以及空氣品質 (AQI / PM2.5) 與紫外線指數，出門需要帶傘或防曬嗎？'
           )
+      },
+      {
+        title: '🎧 Toggle Stark Workshop Ambient Reactor Hum (切換史塔克實驗室反應爐背景白噪音)',
+        tag: 'AUDIO DSP',
+        action: () => {
+          const active = this.audio.setAmbientHum(!this.audio.ambientHumEnabled);
+          if (this.dom.toggleAmbientHumBtn) {
+            this._updateToggleChip(this.dom.toggleAmbientHumBtn, active);
+          }
+        }
+      },
+      {
+        title: '⏱️ Start 10-Minute Tactical Countdown Timer (啟動 10 分鐘戰術倒數計時)',
+        tag: 'TIMER',
+        action: () => this.startTacticalTimer(600)
       },
       {
         title: '📚 Search ArXiv Latest AI & LLM Research Papers (搜尋最新 ArXiv AI 論文)',
@@ -1501,15 +1528,44 @@ class JarvisHudController {
 
     const tasks = state.tasks || [];
     const memories = state.memories || [];
+    const watchlist = state.watchlist || [];
 
-    if (tasks.length === 0 && memories.length === 0) {
+    if (tasks.length === 0 && memories.length === 0 && watchlist.length === 0) {
       const empty = document.createElement('div');
       empty.style.fontSize = '0.68rem';
       empty.style.color = 'var(--text-muted)';
-      empty.textContent = 'Vault empty — Add tasks or say "JARVIS, 記住..."';
+      empty.textContent = 'Vault empty — Add tasks, memories, or stock tickers';
       this.dom.vaultListContainer.appendChild(empty);
       return;
     }
+
+    watchlist.slice(0, 8).forEach((sym) => {
+      const row = document.createElement('div');
+      row.className = 'vault-item';
+
+      const textSpan = document.createElement('span');
+      textSpan.style.color = '#00ff9d';
+      textSpan.style.cursor = 'pointer';
+      textSpan.title = `Click to query live telemetry for ${sym}`;
+      textSpan.textContent = `📈 WATCHLIST: ${sym}`;
+      textSpan.addEventListener('click', () => {
+        this.handleSendMessage(`JARVIS，請幫我查詢我的自選股 ${sym} 與目前市場的最新行情與 5 日走勢。`);
+      });
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'vault-del-btn';
+      delBtn.textContent = '✕';
+      delBtn.addEventListener('click', async () => {
+        await fetch(`/api/vault/watchlist?symbol=${encodeURIComponent(sym)}`, {
+          method: 'DELETE'
+        });
+        this.refreshVault();
+      });
+
+      row.appendChild(textSpan);
+      row.appendChild(delBtn);
+      this.dom.vaultListContainer.appendChild(row);
+    });
 
     tasks.slice(0, 8).forEach((t) => {
       const row = document.createElement('div');
@@ -1588,6 +1644,19 @@ class JarvisHudController {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: val })
+    });
+    this.refreshVault();
+  }
+
+  async handleAddVaultWatchlist() {
+    const val = this.dom.vaultInput?.value.trim();
+    if (!val) return;
+    this.dom.vaultInput.value = '';
+    this.audio.playHudClick(2050);
+    await fetch('/api/vault/watchlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol: val })
     });
     this.refreshVault();
   }
@@ -1773,6 +1842,9 @@ class JarvisHudController {
           if (evt.type === 'meta') {
             if (evt.vaultActionExecuted) {
               this.refreshVault();
+            }
+            if (evt.timerAction && evt.timerAction.executed && evt.timerAction.durationSeconds > 0) {
+              this.startTacticalTimer(evt.timerAction.durationSeconds);
             }
             if (evt.launchAction && evt.launchAction.url) {
               window.open(evt.launchAction.url, '_blank', 'noopener,noreferrer');

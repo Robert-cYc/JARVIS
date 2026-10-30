@@ -15,6 +15,8 @@ export class JarvisAudioEngine {
     this.isSpeaking = false;
     this.speechEnergy = 0;
     this.resonanceNodes = null;
+    this.ambientHumEnabled = false;
+    this.ambientNodes = null;
     this.onSpeakingStateChange = null;
 
     if (this.synth) {
@@ -445,6 +447,90 @@ export class JarvisAudioEngine {
     };
 
     this.synth.speak(utterance);
+  }
+
+  /**
+   * Starts or stops the Stark Workshop Ambient Arc Reactor Hum & Brown Noise generator for deep focus.
+   * @param {boolean} active
+   * @returns {boolean}
+   */
+  setAmbientHum(active) {
+    this.ambientHumEnabled = Boolean(active);
+    const ctx = this._ensureAudioContext();
+    if (!ctx) return false;
+
+    if (this.ambientHumEnabled && !this.ambientNodes) {
+      const now = ctx.currentTime;
+
+      // 1. Generate 4-second looping Brown Noise buffer
+      const bufferSize = ctx.sampleRate * 4;
+      const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const output = noiseBuffer.getChannelData(0);
+      let lastOut = 0.0;
+      for (let i = 0; i < bufferSize; i += 1) {
+        const white = Math.random() * 2 - 1;
+        output[i] = (lastOut + 0.02 * white) / 1.02;
+        lastOut = output[i];
+        output[i] *= 0.18;
+      }
+
+      const noiseNode = ctx.createBufferSource();
+      noiseNode.buffer = noiseBuffer;
+      noiseNode.loop = true;
+
+      const noiseFilter = ctx.createBiquadFilter();
+      noiseFilter.type = 'lowpass';
+      noiseFilter.frequency.setValueAtTime(160, now);
+
+      // 2. Dual Warm Sub-Harmonic Reactor Drone (55Hz A1 + 110Hz A2)
+      const droneSub = ctx.createOscillator();
+      const droneHarmonic = ctx.createOscillator();
+      droneSub.type = 'sine';
+      droneSub.frequency.setValueAtTime(55, now);
+      droneHarmonic.type = 'triangle';
+      droneHarmonic.frequency.setValueAtTime(110, now);
+
+      const droneFilter = ctx.createBiquadFilter();
+      droneFilter.type = 'lowpass';
+      droneFilter.frequency.setValueAtTime(190, now);
+
+      const masterGain = ctx.createGain();
+      masterGain.gain.setValueAtTime(0.0001, now);
+      masterGain.gain.linearRampToValueAtTime(0.045, now + 1.2);
+
+      noiseNode.connect(noiseFilter);
+      noiseFilter.connect(masterGain);
+
+      droneSub.connect(droneFilter);
+      droneHarmonic.connect(droneFilter);
+      droneFilter.connect(masterGain);
+
+      masterGain.connect(ctx.destination);
+
+      noiseNode.start(now);
+      droneSub.start(now);
+      droneHarmonic.start(now);
+
+      this.ambientNodes = { noiseNode, droneSub, droneHarmonic, masterGain };
+      return true;
+    }
+
+    if (!this.ambientHumEnabled && this.ambientNodes) {
+      try {
+        const now = ctx.currentTime;
+        const { noiseNode, droneSub, droneHarmonic, masterGain } = this.ambientNodes;
+        masterGain.gain.setValueAtTime(masterGain.gain.value, now);
+        masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+        noiseNode.stop(now + 0.5);
+        droneSub.stop(now + 0.5);
+        droneHarmonic.stop(now + 0.5);
+      } catch {
+        // Ignore stop errors
+      }
+      this.ambientNodes = null;
+    }
+
+    return this.ambientHumEnabled;
   }
 
   /**

@@ -1,11 +1,14 @@
 import {
   executeWebSkillForMessage,
-  detectLauncherCommand
+  detectLauncherCommand,
+  executeLocalAppLaunch,
+  detectTimerCommand
 } from './webSkillsService.js';
 import {
   getVaultState,
   addMemory,
   addTask,
+  addWatchlistSymbol,
   detectVaultCommand,
   formatVaultContextForPrompt
 } from './memoryVaultService.js';
@@ -222,7 +225,7 @@ export async function generateJarvisResponse({
   const lastUserMessage =
     normalizedHistory.filter((m) => m.role === 'user').pop()?.content || 'Status report';
 
-  // 1. Check if the user issued a Memory Vault or Task command
+  // 1. Check if the user issued a Memory Vault, Task, or Watchlist command
   let vaultActionExecuted = null;
   const vaultCmd = detectVaultCommand(lastUserMessage);
   if (vaultCmd.action === 'add_memory') {
@@ -231,6 +234,12 @@ export async function generateJarvisResponse({
   } else if (vaultCmd.action === 'add_task') {
     const task = await addTask(vaultCmd.payload);
     vaultActionExecuted = { type: 'task', item: task };
+  } else if (vaultCmd.action === 'add_watchlist') {
+    const res = await addWatchlistSymbol(vaultCmd.payload);
+    vaultActionExecuted = {
+      type: 'watchlist',
+      item: { title: res.added.join(', ') || vaultCmd.payload, watchlist: res.watchlist }
+    };
   }
 
   const vaultState = await getVaultState();
@@ -252,16 +261,21 @@ export async function generateJarvisResponse({
     .filter(Boolean)
     .join('\n\n');
 
-  // Check for Workshop App/Web Launcher Command
+  // Check for Workshop App/Web Launcher Command or Voice Timer Command
   const launchAction = detectLauncherCommand(lastUserMessage);
+  if (launchAction && launchAction.type === 'local_app') {
+    executeLocalAppLaunch(launchAction);
+  }
+  const timerAction = detectTimerCommand(lastUserMessage);
 
   // 2. Execute live Web / Weather / Market / Morning Briefing skills if applicable
   let webSkillResult = { executed: false, skill: 'none', items: [], contextBlock: '' };
-  if (webSearchEnabled && !launchAction) {
+  if (webSearchEnabled && !launchAction && !timerAction) {
     const pendingTasks = (vaultState.tasks || []).filter((t) => !t.completed);
     webSkillResult = await executeWebSkillForMessage(lastUserMessage, {
       forceWebSearch,
-      pendingTasks
+      pendingTasks,
+      customWatchlist: vaultState.watchlist || []
     });
   }
 
@@ -272,7 +286,15 @@ export async function generateJarvisResponse({
     let extraContext = '';
 
     if (launchAction) {
-      extraContext += `\n[SYSTEM CONFIRMATION: Opening "${launchAction.label}" (${launchAction.url}) on the user's HUD display now. Confirm this action briefly and politely in J.A.R.V.I.S.'s voice.]\n`;
+      const targetDesc =
+        launchAction.type === 'local_app'
+          ? `local desktop application(s) "${launchAction.label}" on the host workstation`
+          : `"${launchAction.label}" (${launchAction.url}) on the user's HUD display`;
+      extraContext += `\n[SYSTEM CONFIRMATION: Launching ${targetDesc} now. Confirm this action briefly and politely in J.A.R.V.I.S.'s voice.]\n`;
+    }
+
+    if (timerAction) {
+      extraContext += `\n[SYSTEM CONFIRMATION: Tactical Countdown Timer has been initiated on the HUD for ${timerAction.label} (${timerAction.durationSeconds} seconds). Confirm this timer activation politely in J.A.R.V.I.S.'s voice.]\n`;
     }
 
     if (vaultActionExecuted) {
@@ -502,6 +524,7 @@ export async function generateJarvisResponse({
       fallbackUsed: false,
       vaultActionExecuted,
       launchAction,
+      timerAction,
       webSkill: {
         executed: webSkillResult.executed,
         skill: webSkillResult.skill,
@@ -527,6 +550,7 @@ export async function generateJarvisResponse({
       diagnosticError: reason,
       vaultActionExecuted,
       launchAction,
+      timerAction,
       webSkill: {
         executed: webSkillResult.executed,
         skill: webSkillResult.skill,
@@ -569,7 +593,8 @@ export async function streamJarvisResponse(params, sendEvent) {
       model: res.model,
       webSkill: res.webSkill,
       vaultActionExecuted: res.vaultActionExecuted,
-      launchAction: res.launchAction
+      launchAction: res.launchAction,
+      timerAction: res.timerAction
     });
     sendEvent({ type: 'delta', text: res.reply });
     sendEvent({
@@ -581,7 +606,8 @@ export async function streamJarvisResponse(params, sendEvent) {
       latencyMs: res.latencyMs,
       webSkill: res.webSkill,
       vaultActionExecuted: res.vaultActionExecuted,
-      launchAction: res.launchAction
+      launchAction: res.launchAction,
+      timerAction: res.timerAction
     });
     return;
   }
@@ -603,6 +629,12 @@ export async function streamJarvisResponse(params, sendEvent) {
   } else if (vaultCmd.action === 'add_task') {
     const task = await addTask(vaultCmd.payload);
     vaultActionExecuted = { type: 'task', item: task };
+  } else if (vaultCmd.action === 'add_watchlist') {
+    const res = await addWatchlistSymbol(vaultCmd.payload);
+    vaultActionExecuted = {
+      type: 'watchlist',
+      item: { title: res.added.join(', ') || vaultCmd.payload, watchlist: res.watchlist }
+    };
   }
 
   const vaultState = await getVaultState();
@@ -625,17 +657,22 @@ export async function streamJarvisResponse(params, sendEvent) {
     .join('\n\n');
 
   const launchAction = detectLauncherCommand(lastUserMessage);
+  if (launchAction && launchAction.type === 'local_app') {
+    executeLocalAppLaunch(launchAction);
+  }
+  const timerAction = detectTimerCommand(lastUserMessage);
 
   let webSkillResult = { executed: false, skill: 'none', items: [], contextBlock: '' };
-  if (webSearchEnabled && !launchAction) {
+  if (webSearchEnabled && !launchAction && !timerAction) {
     const pendingTasks = (vaultState.tasks || []).filter((t) => !t.completed);
     webSkillResult = await executeWebSkillForMessage(lastUserMessage, {
       forceWebSearch,
-      pendingTasks
+      pendingTasks,
+      customWatchlist: vaultState.watchlist || []
     });
   }
 
-  // Emit metadata immediately so HUD shows satellite uplink / launcher / vault status before tokens arrive
+  // Emit metadata immediately so HUD shows satellite uplink / launcher / timer / vault status before tokens arrive
   sendEvent({
     type: 'meta',
     provider,
@@ -646,7 +683,8 @@ export async function streamJarvisResponse(params, sendEvent) {
       items: webSkillResult.items
     },
     vaultActionExecuted,
-    launchAction
+    launchAction,
+    timerAction
   });
 
   const enrichedHistory = [...normalizedHistory];
@@ -654,7 +692,14 @@ export async function streamJarvisResponse(params, sendEvent) {
   if (lastIdx >= 0 && enrichedHistory[lastIdx].role === 'user') {
     let extraContext = '';
     if (launchAction) {
-      extraContext += `\n[SYSTEM CONFIRMATION: Opening "${launchAction.label}" (${launchAction.url}) on the user's HUD display now. Confirm this action briefly and politely in J.A.R.V.I.S.'s voice.]\n`;
+      const targetDesc =
+        launchAction.type === 'local_app'
+          ? `local desktop application(s) "${launchAction.label}" on the host workstation`
+          : `"${launchAction.label}" (${launchAction.url}) on the user's HUD display`;
+      extraContext += `\n[SYSTEM CONFIRMATION: Launching ${targetDesc} now. Confirm this action briefly and politely in J.A.R.V.I.S.'s voice.]\n`;
+    }
+    if (timerAction) {
+      extraContext += `\n[SYSTEM CONFIRMATION: Tactical Countdown Timer has been initiated on the HUD for ${timerAction.label} (${timerAction.durationSeconds} seconds). Confirm this timer activation politely in J.A.R.V.I.S.'s voice.]\n`;
     }
     if (vaultActionExecuted) {
       extraContext += `\n[SYSTEM CONFIRMATION: Successfully saved ${vaultActionExecuted.type} ("${
@@ -755,7 +800,8 @@ export async function streamJarvisResponse(params, sendEvent) {
         items: webSkillResult.items
       },
       vaultActionExecuted,
-      launchAction
+      launchAction,
+      timerAction
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'Stream connection error';
@@ -779,7 +825,8 @@ export async function streamJarvisResponse(params, sendEvent) {
         items: webSkillResult.items
       },
       vaultActionExecuted,
-      launchAction
+      launchAction,
+      timerAction
     });
   }
 }
