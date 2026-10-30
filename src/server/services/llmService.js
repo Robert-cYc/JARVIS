@@ -40,8 +40,8 @@ export const PERSONA_MODES = {
  * @returns {string}
  */
 export function buildJarvisSystemPrompt({
-  personaMode = 'butler',
-  language = 'auto',
+  personaMode = 'witty',
+  language = 'en-GB',
   honorific = 'Sir'
 } = {}) {
   const modeConfig = PERSONA_MODES[personaMode] || PERSONA_MODES.butler;
@@ -200,8 +200,8 @@ export async function generateJarvisResponse({
   provider = 'ollama',
   model = 'llama3.2',
   messages = [],
-  personaMode = 'butler',
-  language = 'auto',
+  personaMode = 'witty',
+  language = 'en-GB',
   honorific = 'Sir',
   apiKey = '',
   baseUrl = '',
@@ -546,8 +546,8 @@ export async function streamJarvisResponse(params, sendEvent) {
     provider = 'ollama',
     model = 'llama3.2',
     messages = [],
-    personaMode = 'butler',
-    language = 'auto',
+    personaMode = 'witty',
+    language = 'en-GB',
     honorific = 'Sir',
     apiKey = '',
     baseUrl = '',

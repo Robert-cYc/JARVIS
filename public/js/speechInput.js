@@ -42,7 +42,7 @@ export class JarvisSpeechInput {
       this.recognition.continuous = false;
       this.recognition.interimResults = true;
       this.recognition.maxAlternatives = 3;
-      this.recognition.lang = 'zh-TW';
+      this.recognition.lang = 'en-GB';
 
       this.recognition.onstart = () => {
         this.isListening = true;

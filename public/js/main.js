@@ -2,7 +2,7 @@ import { JarvisAudioEngine } from './audioEngine.js';
 import { ArcReactorVisualizer } from './hudVisualizer.js';
 import { JarvisSpeechInput } from './speechInput.js';
 
-const STORAGE_KEY = 'stark_jarvis_hud_config_v1';
+const STORAGE_KEY = 'stark_jarvis_hud_config_v2';
 
 class JarvisHudController {
   constructor() {
@@ -30,6 +30,12 @@ class JarvisHudController {
     this._initVisualizer();
     this._initSpeechInput();
     this._loadSavedSettings();
+    if (this.dom.activeProtocolText && this.dom.personaSelect) {
+      this.dom.activeProtocolText.textContent = this.dom.personaSelect.value.toUpperCase();
+    }
+    if (this.speechInput && this.dom.languageSelect) {
+      this.speechInput.setLanguage(this.dom.languageSelect.value);
+    }
     this._bindEvents();
     this._startClock();
     this._populateVoices();
