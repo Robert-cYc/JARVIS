@@ -625,6 +625,21 @@ body::after {
   color: #fff;
 }
 
+.source-right-cluster {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.hud-sparkline {
+  display: block;
+  background: rgba(0, 12, 26, 0.75);
+  border: 1px solid rgba(0, 240, 255, 0.22);
+  padding: 1px 3px;
+  filter: drop-shadow(0 0 4px rgba(0, 240, 255, 0.35));
+}
+
 .source-tag {
   font-size: 0.64rem;
   color: var(--amber);

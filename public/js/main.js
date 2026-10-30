@@ -3,11 +3,13 @@ import { ArcReactorVisualizer } from './hudVisualizer.js';
 import { JarvisSpeechInput } from './speechInput.js';
 
 const STORAGE_KEY = 'stark_jarvis_hud_config_v2';
+const CHAT_HISTORY_STORAGE_KEY = 'stark_jarvis_chat_history_v1';
 
 class JarvisHudController {
   constructor() {
     this.audio = new JarvisAudioEngine();
     this.conversationHistory = [];
+    this.persistedLogCards = [];
     this.webSearchEnabled = true;
     this.forceWebSearch = false;
     this.pendingAttachment = null;
@@ -50,17 +52,19 @@ class JarvisHudController {
     this.refreshVault();
     setInterval(() => this.refreshTelemetryOnly(), 2000);
 
-    // Initial Boot Greeting in Comms Log
-    this.appendMessage({
-      role: 'assistant',
-      sender: 'J.A.R.V.I.S.',
-      content:
-        'Good day, Sir. J.A.R.V.I.S. Mark LXXXV Holographic Interface is online. All vocal modulation arrays and neural links are standing by.\n\n' +
-        '先生，歡迎回到史塔克主控台。您可以隨時切換左側的本地端 Ollama 或雲端 LLM 核心，並直接以文字或語音向我提問。點擊右上角「ENGAGE HUD AUDIO」即可啟動完整裝甲音效與語音問候。',
-      speechText:
-        'Good day, Sir. J.A.R.V.I.S. Mark 85 Holographic Interface is online. 先生，歡迎回到史塔克主控台，隨時為您效勞。',
-      badge: 'SYSTEM BOOT // READY'
-    });
+    // Restore Persistent Chat History or Display Initial Boot Greeting
+    if (!this._loadSavedChatHistory()) {
+      this.appendMessage({
+        role: 'assistant',
+        sender: 'J.A.R.V.I.S.',
+        content:
+          'Good day, Sir. J.A.R.V.I.S. Mark LXXXV Holographic Interface is online. All vocal modulation arrays and neural links are standing by.\n\n' +
+          '先生，歡迎回到史塔克主控台。您可以隨時切換左側的本地端 Ollama 或雲端 LLM 核心，並直接以文字或語音向我提問。點擊右上角「ENGAGE HUD AUDIO」即可啟動完整裝甲音效與語音問候。',
+        speechText:
+          'Good day, Sir. J.A.R.V.I.S. Mark 85 Holographic Interface is online. 先生，歡迎回到史塔克主控台，隨時為您效勞。',
+        badge: 'SYSTEM BOOT // READY'
+      });
+    }
   }
 
   _cacheDom() {
@@ -325,6 +329,39 @@ class JarvisHudController {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch {
       // Ignore storage quota issues
+    }
+  }
+
+  _loadSavedChatHistory() {
+    try {
+      const raw = localStorage.getItem(CHAT_HISTORY_STORAGE_KEY);
+      if (!raw) return false;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed.cards) || parsed.cards.length === 0) return false;
+
+      this.conversationHistory = Array.isArray(parsed.history)
+        ? parsed.history.slice(-24)
+        : [];
+      this.persistedLogCards = parsed.cards.slice(-24);
+
+      for (const item of this.persistedLogCards) {
+        this.appendMessage({ ...item, skipPersist: true });
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  _saveChatHistory() {
+    try {
+      const payload = {
+        history: this.conversationHistory.slice(-24),
+        cards: this.persistedLogCards.slice(-24)
+      };
+      localStorage.setItem(CHAT_HISTORY_STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      // Ignore storage quota errors
     }
   }
 
@@ -626,13 +663,20 @@ class JarvisHudController {
     this.dom.clearHistoryBtn.addEventListener('click', () => {
       this.audio.playHudClick(1400);
       this.conversationHistory = [];
+      this.persistedLogCards = [];
+      try {
+        localStorage.removeItem(CHAT_HISTORY_STORAGE_KEY);
+      } catch {
+        // Ignore storage errors
+      }
       this.dom.commsConsole.innerHTML = '';
       this.appendMessage({
         role: 'assistant',
         sender: 'J.A.R.V.I.S.',
         content: 'Communications log purged, Sir. Ready for new directives.',
         speechText: 'Communications log purged, Sir.',
-        badge: 'MEMORY CLEARED'
+        badge: 'MEMORY CLEARED',
+        skipPersist: true
       });
     });
   }
@@ -1222,7 +1266,65 @@ class JarvisHudController {
     }
   }
 
-  appendMessage({ role, sender, content, speechText, badge, sources = [], launchAction = null }) {
+  /**
+   * Builds an inline Holographic SVG Sparkline Chart for 5-day Gold/Market trends.
+   * @param {number[]} points
+   * @param {number} [changePercent=0]
+   * @returns {SVGElement | null}
+   */
+  _createSparklineSvg(points, changePercent = 0) {
+    if (!Array.isArray(points) || points.length < 2) return null;
+    const width = 76;
+    const height = 22;
+    const pad = 3;
+    const min = Math.min(...points);
+    const max = Math.max(...points);
+    const range = max - min || 1;
+    const strokeColor = changePercent >= 0 ? '#00ff9d' : '#ff3344';
+
+    const coords = points.map((val, idx) => {
+      const x = pad + (idx / (points.length - 1)) * (width - pad * 2);
+      const y = height - pad - ((val - min) / range) * (height - pad * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    });
+
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('width', String(width));
+    svg.setAttribute('height', String(height));
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.setAttribute('class', 'hud-sparkline');
+
+    const polyline = document.createElementNS(ns, 'polyline');
+    polyline.setAttribute('fill', 'none');
+    polyline.setAttribute('stroke', strokeColor);
+    polyline.setAttribute('stroke-width', '1.8');
+    polyline.setAttribute('stroke-linecap', 'round');
+    polyline.setAttribute('stroke-linejoin', 'round');
+    polyline.setAttribute('points', coords.join(' '));
+    svg.appendChild(polyline);
+
+    const lastCoord = coords[coords.length - 1].split(',');
+    const dot = document.createElementNS(ns, 'circle');
+    dot.setAttribute('cx', lastCoord[0]);
+    dot.setAttribute('cy', lastCoord[1]);
+    dot.setAttribute('r', '2.3');
+    dot.setAttribute('fill', strokeColor);
+    svg.appendChild(dot);
+
+    return svg;
+  }
+
+  appendMessage({
+    role,
+    sender,
+    content,
+    speechText,
+    badge,
+    sources = [],
+    launchAction = null,
+    skipPersist = false
+  }) {
     const card = document.createElement('div');
     card.className = `msg-card ${role === 'user' ? 'user' : 'jarvis'}`;
 
@@ -1275,12 +1377,26 @@ class JarvisHudController {
         const textSpan = document.createElement('span');
         textSpan.textContent = item.title || item.link;
 
+        const rightCluster = document.createElement('span');
+        rightCluster.className = 'source-right-cluster';
+
+        if (Array.isArray(item.sparklinePoints) && item.sparklinePoints.length >= 2) {
+          const sparkSvg = this._createSparklineSvg(
+            item.sparklinePoints,
+            Number(item.changePercent) || 0
+          );
+          if (sparkSvg) {
+            rightCluster.appendChild(sparkSvg);
+          }
+        }
+
         const tagSpan = document.createElement('span');
         tagSpan.className = 'source-tag';
         tagSpan.textContent = item.source || 'LIVE FEED';
+        rightCluster.appendChild(tagSpan);
 
         linkEl.appendChild(textSpan);
-        linkEl.appendChild(tagSpan);
+        linkEl.appendChild(rightCluster);
         sourcesBox.appendChild(linkEl);
       });
 
@@ -1306,6 +1422,20 @@ class JarvisHudController {
 
     this.dom.commsConsole.appendChild(card);
     this.dom.commsConsole.scrollTop = this.dom.commsConsole.scrollHeight;
+
+    if (!skipPersist) {
+      this.persistedLogCards.push({
+        role,
+        sender,
+        content,
+        speechText,
+        badge: badgeEl.textContent,
+        sources: Array.isArray(sources) ? sources.slice(0, 6) : [],
+        launchAction
+      });
+      this._saveChatHistory();
+    }
+
     return { card, body, badgeEl };
   }
 
@@ -1568,14 +1698,14 @@ class JarvisHudController {
       displayUserText += `\n[👁️ Optic Vision Frame Attached]`;
     }
 
+    this.conversationHistory.push({ role: 'user', content: userText });
+
     this.appendMessage({
       role: 'user',
       sender: `${honorific.toUpperCase()} // COMMAND`,
       content: displayUserText,
       badge: `${provider.toUpperCase()} :: ${chosenModel}`
     });
-
-    this.conversationHistory.push({ role: 'user', content: userText });
 
     this.visualizer.setState('THINKING');
     this.dom.reactorStateBanner.textContent = `NEURAL & SATELLITE SYNTHESIS // ${chosenModel.toUpperCase()}`;
@@ -1587,7 +1717,8 @@ class JarvisHudController {
       sender: 'J.A.R.V.I.S.',
       content: '...',
       speechText: '',
-      badge: `SYNTHESIZING // ${chosenModel}`
+      badge: `SYNTHESIZING // ${chosenModel}`,
+      skipPersist: true
     });
 
     let accumulatedText = '';

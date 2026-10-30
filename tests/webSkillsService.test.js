@@ -4,6 +4,7 @@ import {
   decodeHtmlEntities,
   extractReadableTextFromHtml,
   parseRssItems,
+  parseBotGoldHtml,
   detectWebSkillIntent,
   detectLauncherCommand
 } from '../src/server/services/webSkillsService.js';
@@ -116,5 +117,24 @@ describe('J.A.R.V.I.S. Web Skills & News Service', () => {
     const ghCmd = detectLauncherCommand('幫我打開 GitHub');
     assert.ok(ghCmd);
     assert.equal(ghCmd.url, 'https://github.com');
+  });
+
+  it('parses Bank of Taiwan (BOT) Gold Passbook HTML rates accurately', () => {
+    const mockBotHtml = `
+      <tr>
+        <td>本行賣出</td>
+        <td class="text-right ebank">4,220</td>
+      </tr>
+      <tr>
+        <td>本行買進</td>
+        <td class="text-right ebank">4,173</td>
+      </tr>
+    `;
+    const parsed = parseBotGoldHtml(mockBotHtml);
+    assert.ok(parsed);
+    assert.equal(parsed.sellPerGramTwd, 4220);
+    assert.equal(parsed.buyPerGramTwd, 4173);
+    assert.equal(parsed.sellPerQianTwd, 15825);
+    assert.equal(parsed.buyPerQianTwd, 15649);
   });
 });

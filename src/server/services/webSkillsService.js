@@ -504,8 +504,47 @@ export async function fetchWeatherTelemetry(cityQuery = 'Taipei') {
 }
 
 /**
+ * Parses Bank of Taiwan (台灣銀行黃金存摺) HTML page for 1 Gram TWD Buy/Sell rates.
+ * @param {string} html
+ * @returns {{buyPerGramTwd: number, sellPerGramTwd: number, buyPerQianTwd: number, sellPerQianTwd: number} | null}
+ */
+export function parseBotGoldHtml(html) {
+  if (!html || typeof html !== 'string') return null;
+  const sellMatch = html.match(/本行賣出<\/td>\s*<td[^>]*>\s*([\d,]+)/i);
+  const buyMatch = html.match(/本行買進<\/td>\s*<td[^>]*>\s*([\d,]+)/i);
+  if (!sellMatch || !buyMatch) return null;
+
+  const sellPerGramTwd = Number(sellMatch[1].replace(/,/g, ''));
+  const buyPerGramTwd = Number(buyMatch[1].replace(/,/g, ''));
+  if (!sellPerGramTwd || !buyPerGramTwd) return null;
+
+  // 1 Taiwan Qian (台錢) = 3.75 Grams
+  return {
+    buyPerGramTwd,
+    sellPerGramTwd,
+    buyPerQianTwd: Math.round(buyPerGramTwd * 3.75),
+    sellPerQianTwd: Math.round(sellPerGramTwd * 3.75)
+  };
+}
+
+/**
+ * Fetches live official Bank of Taiwan (台灣銀行) Gold Passbook TWD rates.
+ * @returns {Promise<{buyPerGramTwd: number, sellPerGramTwd: number, buyPerQianTwd: number, sellPerQianTwd: number} | null>}
+ */
+export async function fetchBotGoldRates() {
+  try {
+    const res = await fetchWithTimeout('https://rate.bot.com.tw/gold?Lang=zh-TW', 4500);
+    if (!res.ok) return null;
+    const html = await res.text();
+    return parseBotGoldHtml(html);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Fetches live Gold price trend (GC=F), stock, crypto, and FX market quotes from Yahoo Finance v8 API.
- * Includes 5-day price rally/trend analysis and Taiwan Gold (NT$/oz & NT$/台錢) conversion.
+ * Includes 5-day price rally/trend analysis, SVG sparkline series, and official Bank of Taiwan Gold Passbook rates.
  * @param {Array<string>} [symbols]
  * @returns {Promise<{skill: string, quotes: Array<object>, items: Array<object>, summaryText: string}>}
  */
@@ -530,6 +569,10 @@ export async function fetchMarketTelemetry(
     'ETH-USD': 'Ethereum (以太幣 ETH/USD)',
     'TWD=X': 'USD/TWD (美金兌台幣匯率)'
   };
+
+  const botGoldPromise = symbols.includes('GC=F')
+    ? fetchBotGoldRates()
+    : Promise.resolve(null);
 
   await Promise.all(
     symbols.slice(0, 8).map(async (sym) => {
@@ -564,6 +607,10 @@ export async function fetchMarketTelemetry(
         const fiveDaySign = fiveDayPct >= 0 ? '+' : '';
         const fiveDayHigh = highList.length > 0 ? Math.max(...highList, price) : price;
         const fiveDayLow = lowList.length > 0 ? Math.min(...lowList, price) : price;
+        const history5d =
+          closeList.length >= 2
+            ? closeList.map((v) => Number(v.toFixed(2)))
+            : [Number(prev.toFixed(2)), Number(price.toFixed(2))];
 
         const name = labelMap[sym] || sym;
 
@@ -575,24 +622,29 @@ export async function fetchMarketTelemetry(
           changePercent: pct,
           fiveDayChangePercent: fiveDayPct,
           fiveDayHigh: Number(fiveDayHigh.toFixed(2)),
-          fiveDayLow: Number(fiveDayLow.toFixed(2))
+          fiveDayLow: Number(fiveDayLow.toFixed(2)),
+          history5d
         });
 
         const trendTag =
           sym === 'GC=F'
             ? ` | 5日漲勢 ${fiveDaySign}${fiveDayPct}% (區間 ${fiveDayLow.toFixed(0)}~${fiveDayHigh.toFixed(0)})`
-            : '';
+            : ` | 5D ${fiveDaySign}${fiveDayPct}%`;
 
         items.push({
           title: `${name}: ${price.toLocaleString()} ${meta.currency || ''} (單日 ${sign}${pct}%${trendTag})`,
           link: `https://finance.yahoo.com/quote/${encodeURIComponent(sym)}`,
-          source: sym === 'GC=F' ? 'Gold Bullion Telemetry' : 'Market Telemetry'
+          source: sym === 'GC=F' ? 'Gold Bullion Telemetry' : 'Market Telemetry',
+          sparklinePoints: history5d,
+          changePercent: fiveDayPct
         });
       } catch {
         // Ignore single symbol error
       }
     })
   );
+
+  const botGold = await botGoldPromise;
 
   // Calculate Taiwan Gold Reference Price (NT$ / oz and NT$ / 台錢) if GC=F is available
   const goldQuote = quotes.find((q) => q.symbol === 'GC=F');
@@ -608,22 +660,31 @@ export async function fetchMarketTelemetry(
     const trendArrow =
       goldQuote.fiveDayChangePercent >= 0 ? '📈 多頭上攻 (Bullish Rally)' : '📉 回檔整理 (Pullback)';
 
+    const botLine = botGold
+      ? `- 台灣銀行黃金存摺即時牌價 (Official BOT Gold Passbook): 1公克 本行買進 NT$${botGold.buyPerGramTwd.toLocaleString()} / 本行賣出 NT$${botGold.sellPerGramTwd.toLocaleString()} | 折算每台錢(3.75g) 買進約 NT$${botGold.buyPerQianTwd.toLocaleString()} / 賣出約 NT$${botGold.sellPerQianTwd.toLocaleString()}\n`
+      : '';
+
     goldDetailBlock =
-      `\n[🥇 黃金金價漲勢專區 (Gold Bullion & Taiwan Conversion)]:\n` +
+      `\n[🥇 黃金金價漲勢專區 (Gold Bullion & Taiwan Bank Rates)]:\n` +
       `- 國際黃金價格 (GC=F): $${goldQuote.price.toLocaleString()} USD/oz (今日漲跌: ${
         goldQuote.changePercent >= 0 ? '+' : ''
       }${goldQuote.changePercent}% | 近5日累計漲勢: ${
         goldQuote.fiveDayChangePercent >= 0 ? '+' : ''
       }${goldQuote.fiveDayChangePercent}%)\n` +
       `- 近5日金價高低區間: $${goldQuote.fiveDayLow.toLocaleString()} ~ $${goldQuote.fiveDayHigh.toLocaleString()} USD/oz (${trendArrow})\n` +
-      `- 台灣黃金換算參考價 (依匯率 ${usdToTwd}): 約 NT$${twdPerQian.toLocaleString()} / 台錢 | 約 NT$${twdPerGram.toLocaleString()} / 公克 | 約 NT$${twdPerOz.toLocaleString()} / 盎司`;
+      botLine +
+      `- 國際金價匯率折算參考 (依匯率 ${usdToTwd}): 約 NT$${twdPerQian.toLocaleString()} / 台錢 | 約 NT$${twdPerGram.toLocaleString()} / 公克 | 約 NT$${twdPerOz.toLocaleString()} / 盎司`;
 
     items.unshift({
-      title: `🥇 台灣黃金換算: 約 NT$${twdPerQian.toLocaleString()}/台錢 (國際金價 $${goldQuote.price.toLocaleString()} USD/oz, 5日漲勢 ${
-        goldQuote.fiveDayChangePercent >= 0 ? '+' : ''
-      }${goldQuote.fiveDayChangePercent}%)`,
-      link: 'https://rate.bot.com.tw/gold',
-      source: '台灣銀行黃金牌價 / Gold Telemetry'
+      title: botGold
+        ? `🏦 台灣銀行黃金存摺牌價: 買進 NT$${botGold.buyPerGramTwd.toLocaleString()}/g (賣出 NT$${botGold.sellPerGramTwd.toLocaleString()}/g) | 每台錢約 NT$${botGold.sellPerQianTwd.toLocaleString()}`
+        : `🥇 台灣黃金換算: 約 NT$${twdPerQian.toLocaleString()}/台錢 (國際金價 $${goldQuote.price.toLocaleString()} USD/oz, 5日漲勢 ${
+            goldQuote.fiveDayChangePercent >= 0 ? '+' : ''
+          }${goldQuote.fiveDayChangePercent}%)`,
+      link: 'https://rate.bot.com.tw/gold?Lang=zh-TW',
+      source: '台灣銀行黃金牌價 (BOT Live)',
+      sparklinePoints: goldQuote.history5d,
+      changePercent: goldQuote.fiveDayChangePercent
     });
   }
 
