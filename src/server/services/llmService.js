@@ -14,8 +14,23 @@ import {
 } from './memoryVaultService.js';
 import { getSystemTelemetry } from './telemetryService.js';
 import { parseAlertCommand, addPriceAlert } from './alertService.js';
+import { toTraditionalChinese } from './chineseConverterService.js';
 
 const DEFAULT_OLLAMA_URL = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
+
+/**
+ * Ensures text is strictly in Taiwanese Traditional Chinese (zh-TW) if Chinese characters are present.
+ * @param {string} text
+ * @param {string} [language='auto']
+ * @returns {string}
+ */
+export function ensureTraditionalChinese(text, language = 'auto') {
+  if (!text || typeof text !== 'string') return text || '';
+  if (language === 'en-GB' && !/[\u4e00-\u9fff]/.test(text)) {
+    return text;
+  }
+  return toTraditionalChinese(text);
+}
 
 export const PERSONA_MODES = {
   butler: {
@@ -51,15 +66,18 @@ export function buildJarvisSystemPrompt({
   const modeConfig = PERSONA_MODES[personaMode] || PERSONA_MODES.butler;
 
   let languageRule =
-    'Respond in the same language the user speaks. If the user writes in Traditional Chinese (繁體中文), respond in natural, refined Traditional Chinese with JARVIS\'s gentlemanly butler tone (e.g. addressing them as "先生" or "' +
+    'Language & Script Directive:\n' +
+    '- When writing or responding in Chinese, you MUST strictly and exclusively use Taiwanese Traditional Chinese (台灣繁體中文 / 正體中文, e.g. 顯示、圖、體、現、軌道、運行、當前、設定、資料、衛星、環).\n' +
+    '- ABSOLUTELY NEVER use Simplified Chinese (嚴格禁止使用簡體字，如 图、现、轨、当、显、设 等簡化字).\n' +
+    '- Maintain J.A.R.V.I.S.\'s composed gentlemanly butler tone, addressing the user respectfully as "' +
     honorific +
-    '"). If the user writes in English, respond in British English.';
+    '". If the user writes in English, respond in refined British English.';
 
   if (language === 'zh-TW') {
     languageRule =
-      'Always respond in refined Traditional Chinese (繁體中文), maintaining J.A.R.V.I.S.\'s composed gentlemanly butler cadence and addressing the user as "先生" or "' +
+      'Strict Language Directive: ALWAYS respond in refined Traditional Chinese (繁體中文 / 台灣正體). Maintain J.A.R.V.I.S.\'s gentlemanly butler cadence and address the user as "' +
       honorific +
-      '". Occasionally include concise English technical terms where natural for Stark Industries HUD telemetry.';
+      '". NEVER use Simplified Chinese characters (嚴禁簡體字，必須使用正體字如：圖、現、軌、顯、當、衛、環). Occasionally include concise English technical terms where natural for Stark Industries HUD telemetry.';
   } else if (language === 'en-GB') {
     languageRule =
       'Always respond in refined British English, addressing the user as "' + honorific + '".';
@@ -527,9 +545,11 @@ export async function generateJarvisResponse({
       throw new Error('Empty response returned from neural core');
     }
 
+    const finalReply = ensureTraditionalChinese(reply.trim(), language);
+
     return {
-      reply: reply.trim(),
-      speechText: sanitizeForSpeech(reply),
+      reply: finalReply,
+      speechText: sanitizeForSpeech(finalReply),
       provider,
       model: normalizedModel,
       latencyMs: Date.now() - startTime,
@@ -545,11 +565,14 @@ export async function generateJarvisResponse({
     };
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'Unknown neural link error';
-    const fallbackReply = generateDiagnosticFallbackReply(
-      lastUserMessage,
-      reason,
-      language,
-      webSkillResult
+    const fallbackReply = ensureTraditionalChinese(
+      generateDiagnosticFallbackReply(
+        lastUserMessage,
+        reason,
+        language,
+        webSkillResult
+      ),
+      language
     );
 
     return {
@@ -796,8 +819,9 @@ export async function streamJarvisResponse(params, sendEvent) {
           const evt = JSON.parse(line);
           const token = evt.message?.content || '';
           if (token) {
-            fullReply += token;
-            sendEvent({ type: 'delta', text: token });
+            const cleanToken = ensureTraditionalChinese(token, language);
+            fullReply += cleanToken;
+            sendEvent({ type: 'delta', text: cleanToken });
           }
         } catch {
           // Ignore partial JSON lines
@@ -809,10 +833,12 @@ export async function streamJarvisResponse(params, sendEvent) {
       throw new Error('Empty response from Ollama stream');
     }
 
+    const cleanFullReply = ensureTraditionalChinese(fullReply.trim(), language);
+
     sendEvent({
       type: 'done',
-      reply: fullReply.trim(),
-      speechText: sanitizeForSpeech(fullReply),
+      reply: cleanFullReply,
+      speechText: sanitizeForSpeech(cleanFullReply),
       provider,
       model: normalizedModel,
       latencyMs: Date.now() - startTime,
@@ -827,11 +853,14 @@ export async function streamJarvisResponse(params, sendEvent) {
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'Stream connection error';
-    const fallbackReply = generateDiagnosticFallbackReply(
-      lastUserMessage,
-      reason,
-      language,
-      webSkillResult
+    const fallbackReply = ensureTraditionalChinese(
+      generateDiagnosticFallbackReply(
+        lastUserMessage,
+        reason,
+        language,
+        webSkillResult
+      ),
+      language
     );
     sendEvent({ type: 'delta', text: fallbackReply });
     sendEvent({

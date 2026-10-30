@@ -294,7 +294,11 @@ class JarvisHudController {
       if (cfg.customModel) this.dom.customModelInput.value = cfg.customModel;
       if (cfg.baseUrl) this.dom.baseUrlInput.value = cfg.baseUrl;
       if (cfg.persona) this.dom.personaSelect.value = cfg.persona;
-      if (cfg.language) this.dom.languageSelect.value = cfg.language;
+      if (cfg.language) {
+        this.dom.languageSelect.value = cfg.language === 'en-GB' ? 'zh-TW' : cfg.language;
+      } else {
+        this.dom.languageSelect.value = 'zh-TW';
+      }
       if (cfg.honorific) this.dom.honorificInput.value = cfg.honorific;
       if (cfg.suitTheme && this.dom.suitThemeSelect) {
         this.dom.suitThemeSelect.value = cfg.suitTheme;
