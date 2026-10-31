@@ -45,9 +45,15 @@
             <span>LINK:</span>
             <strong id="activeProviderLabel">OLLAMA LOCAL</strong>
           </div>
-          <div class="telemetry-pill">
-            <span>ARC:</span>
-            <strong id="arcOutputHeader">98.8%</strong>
+          <div
+            id="netStatusPill"
+            class="telemetry-pill"
+            style="cursor: pointer"
+            title="Internet Satellite Uplink (點擊測試網際網路連線狀態)"
+          >
+            <span id="netStatusDot" class="status-dot"></span>
+            <span>NET:</span>
+            <strong id="netStatusHeader">ONLINE</strong>
           </div>
           <div
             id="hudClockPill"
@@ -207,9 +213,9 @@
               <span id="hostPlatformBadge" class="section-badge">HOST</span>
             </div>
 
-            <div id="cpuMetricRow" class="metric-row clickable-telemetry" title="點擊查看 CPU 負載歷史趨勢 (5 / 10 / 30 / 60 分鐘)">
+            <div id="cpuMetricRow" class="metric-row clickable-telemetry" title="點擊查看 CPU 負載歷史趨勢 (5分鐘 ~ 24小時)">
               <div class="metric-head">
-                <span>CPU NEURAL LOAD <span class="trend-badge">📈 5-60M</span></span>
+                <span>CPU NEURAL LOAD <span class="trend-badge">📈 5M-24H</span></span>
                 <strong id="cpuLoadText">--%</strong>
               </div>
               <div class="metric-bar-track">
@@ -217,9 +223,9 @@
               </div>
             </div>
 
-            <div id="gpuNeuralRow" class="metric-row hidden clickable-telemetry" title="點擊查看 GPU 負載歷史趨勢 (5 / 10 / 30 / 60 分鐘)">
+            <div id="gpuNeuralRow" class="metric-row hidden clickable-telemetry" title="點擊查看 GPU 負載歷史趨勢 (5分鐘 ~ 24小時)">
               <div class="metric-head">
-                <span>GPU NEURAL LOAD <span class="trend-badge">📈 5-60M</span></span>
+                <span>GPU NEURAL LOAD <span class="trend-badge">📈 5M-24H</span></span>
                 <strong id="gpuLoadText">--%</strong>
               </div>
               <div class="metric-bar-track">
@@ -227,9 +233,9 @@
               </div>
             </div>
 
-            <div id="gpuMetricRow" class="metric-row hidden clickable-telemetry" title="點擊查看 GPU 記憶體 (VRAM) 歷史趨勢 (5 / 10 / 30 / 60 分鐘)">
+            <div id="gpuMetricRow" class="metric-row hidden clickable-telemetry" title="點擊查看 GPU 記憶體 (VRAM) 歷史趨勢 (5分鐘 ~ 24小時)">
               <div class="metric-head">
-                <span>GPU MEMORY ALLOCATION <span class="trend-badge">📈 5-60M</span></span>
+                <span>GPU MEMORY ALLOCATION <span class="trend-badge">📈 5M-24H</span></span>
                 <strong id="gpuMemLoadText">-- / -- GB</strong>
               </div>
               <div class="metric-bar-track">
@@ -237,9 +243,9 @@
               </div>
             </div>
 
-            <div id="memMetricRow" class="metric-row clickable-telemetry" title="點擊查看記憶體 (RAM) 歷史趨勢 (5 / 10 / 30 / 60 分鐘)">
+            <div id="memMetricRow" class="metric-row clickable-telemetry" title="點擊查看記憶體 (RAM) 歷史趨勢 (5分鐘 ~ 24小時)">
               <div class="metric-head">
-                <span>MEMORY ALLOCATION <span class="trend-badge">📈 5-60M</span></span>
+                <span>MEMORY ALLOCATION <span class="trend-badge">📈 5M-24H</span></span>
                 <strong id="memLoadText">-- / -- GB</strong>
               </div>
               <div class="metric-bar-track">
@@ -621,9 +627,9 @@
               <button
                 type="button"
                 class="directive-btn"
-                data-prompt="JARVIS，請幫我查詢高雄今天的即時天氣、氣溫、降雨機率以及空氣品質 (AQI / PM2.5) 與紫外線指數，出門需要帶傘或防曬嗎？"
+                data-prompt="JARVIS，請查詢台灣中油目前最新公佈的 92、95、98 無鉛汽油與超級柴油每公升牌價，以及國際原油行情。"
               >
-                &gt; ☀️ 高雄天氣 / 空氣品質 AQI / 紫外線 (Live)
+                &gt; ⛽ 台灣中油即時油價 / 牌價行情 (Live)
               </button>
               <button
                 type="button"
@@ -760,10 +766,13 @@
             <button id="gpuMemTrendTabBtn" type="button" class="trend-tab-btn" data-metric="gpuMem">GPU VRAM</button>
           </div>
           <div class="trend-range-tabs">
-            <button type="button" class="range-tab-btn" data-minutes="5">5 MIN</button>
-            <button type="button" class="range-tab-btn" data-minutes="10">10 MIN</button>
-            <button type="button" class="range-tab-btn active" data-minutes="30">30 MIN</button>
-            <button type="button" class="range-tab-btn" data-minutes="60">60 MIN</button>
+            <button type="button" class="range-tab-btn" data-minutes="5">5M</button>
+            <button type="button" class="range-tab-btn" data-minutes="10">10M</button>
+            <button type="button" class="range-tab-btn active" data-minutes="30">30M</button>
+            <button type="button" class="range-tab-btn" data-minutes="60">1H</button>
+            <button type="button" class="range-tab-btn" data-minutes="480">8H</button>
+            <button type="button" class="range-tab-btn" data-minutes="720">12H</button>
+            <button type="button" class="range-tab-btn" data-minutes="1440">24H</button>
           </div>
         </div>
 

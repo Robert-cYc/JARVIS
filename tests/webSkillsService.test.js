@@ -10,6 +10,8 @@ import {
   detectTimerCommand,
   detectWebSkillIntent,
   detectLauncherCommand,
+  fetchTaiwanFuelPrices,
+  fetchHuggingFaceTrending,
   executeWebSkillForMessage
 } from '../src/server/services/webSkillsService.js';
 
@@ -114,6 +116,26 @@ describe('J.A.R.V.I.S. Web Skills & News Service', () => {
     const timeIntentEn = detectWebSkillIntent('JARVIS, what time is it?');
     assert.equal(timeIntentEn.intent, 'time');
 
+    const fuelIntent = detectWebSkillIntent('JARVIS，請問中油今天油價多少？95無鉛汽油有漲嗎？');
+    assert.equal(fuelIntent.intent, 'fuel_price');
+
+    const hfIntent = detectWebSkillIntent('請查詢 Hugging Face 最熱門的開源 AI 模型');
+    assert.equal(hfIntent.intent, 'huggingface');
+
+    const redditIntent = detectWebSkillIntent('請搜尋 Reddit LocalLLaMA 社群最新討論');
+    assert.equal(redditIntent.intent, 'localllama');
+
+    const soxIntent = detectWebSkillIntent('請查詢費半指數與恐慌指數 VIX 的行情');
+    assert.equal(soxIntent.intent, 'market');
+    assert.ok(Array.isArray(soxIntent.customSymbols));
+    assert.ok(soxIntent.customSymbols.includes('^SOX'));
+    assert.ok(soxIntent.customSymbols.includes('^VIX'));
+
+    const jpyIntent = detectWebSkillIntent('JARVIS，請問現在日圓匯率多少？換日幣划算嗎？');
+    assert.equal(jpyIntent.intent, 'market');
+    assert.ok(Array.isArray(jpyIntent.customSymbols));
+    assert.ok(jpyIntent.customSymbols.includes('JPYTWD=X'));
+
     const forceSearch = detectWebSkillIntent('Hello JARVIS', true);
     assert.equal(forceSearch.intent, 'search');
   });
@@ -214,5 +236,24 @@ describe('J.A.R.V.I.S. Web Skills & News Service', () => {
     assert.ok(res.contextBlock.includes('SYSTEM CHRONOMETER'));
     assert.ok(res.contextBlock.includes('當前時間'));
     assert.ok(res.contextBlock.includes(res.items[0].time));
+  });
+
+  it('fetches Taiwan CPC fuel prices and crude oil indicators', async () => {
+    const res = await fetchTaiwanFuelPrices();
+    assert.equal(res.skill, 'taiwan_fuel_prices');
+    assert.ok(Array.isArray(res.items));
+    assert.ok(res.items.length > 0);
+    assert.ok(typeof res.prices.gas95 === 'number');
+    assert.ok(res.prices.gas95 > 20);
+    assert.ok(res.summaryText.includes('台灣中油即時油價'));
+    assert.ok(res.summaryText.includes('95 無鉛汽油'));
+  });
+
+  it('fetches Hugging Face trending models and daily papers', async () => {
+    const res = await fetchHuggingFaceTrending(4);
+    assert.equal(res.skill, 'huggingface_trending');
+    assert.ok(Array.isArray(res.items));
+    assert.ok(res.items.length > 0);
+    assert.ok(res.summaryText.includes('HUGGING FACE'));
   });
 });

@@ -21,7 +21,9 @@
 - **史塔克全球衛星聯網與即時新聞技能 (Stark Satellite Web Uplink & Live News)**
   - **早安綜合簡報 (`morning_briefing`)**：一鍵或語音說出「早安 JARVIS」，平行彙整即時天氣、台美股/比特幣/匯率行情、台灣與科技頭條新聞以及您的未完成待辦事項。
   - **即時天氣與氣象雷達 (`weather_telemetry`)**：串接 Open-Meteo 衛星氣象（免金鑰），查詢台北與全球城市氣溫、體感溫度、降雨機率與風速。
-  - **股市、加密貨幣與匯率遙測 (`market_telemetry`)**：即時檢索台股加權指數 (`^TWII`)、台積電 (`2330.TW`)、輝達 (`NVDA`)、蘋果 (`AAPL`)、比特幣 (`BTC-USD`) 與美金兌台幣匯率 (`TWD=X`)。
+  - **股市、宏觀指數、加密貨幣與外匯遙測 (`market_telemetry`)**：即時檢索台股加權指數 (`^TWII`)、台積電 (`2330.TW`)、輝達 (`NVDA`)、蘋果 (`AAPL`)、費城半導體 (`^SOX`)、CBOE 恐慌指數 (`^VIX`)、美債 10 年期殖利率 (`^TNX`)、比特幣 (`BTC-USD`)、美金兌台幣 (`TWD=X`) 與日圓換匯 (`JPYTWD=X`)。
+  - **台灣中油即時油價與國際原油行情 (`taiwan_fuel_prices`)**：自動串接中油官方 Open Data，即時回報 92/95/98 無鉛汽油與超級柴油公升牌價，並結合 WTI 與布蘭特原油走勢分析。
+  - **Hugging Face 開源 AI 模型榜與 Reddit LocalLLaMA 熱議 (`huggingface_trending`, `reddit_localllama`)**：掌握全球最新開源權重模型、每日精選 AI 論文與本地端模型社群技術突破。
   - **今日新聞頭條 (`todays_news`)**：支援台灣今日焦點、全球 AI 與科技新聞、國際重大頭條以及自訂主題即時新聞檢索。
   - **即時網頁搜尋 (`web_search`)** & **網頁深度閱讀 (`url_reader`)**：整合 DuckDuckGo、Google News RSS 與 Wikipedia 開放搜尋，並支援貼上網址自動擷取摘要。
 - **史塔克長久記憶庫、待辦清單與戰術計時器 (`Memory Vault & Tactical Timer`)**
@@ -43,7 +45,7 @@
 - **即時裝甲與主機遙測、GPU 監控與趨勢分析儀 (Real-Time Telemetry & Hardware Sentinel)**
   - 動態 HTML5 Canvas **方舟反應爐（Arc Reactor）**，隨 J.A.R.V.I.S. 說話頻率與系統狀態（待命、思考中、發聲中、聆聽中）即時改變色溫與聲波振幅。
   - 即時監控主機 CPU 核心負載、記憶體配置、NVIDIA GPU 負載/溫度/VRAM、**磁碟儲存空間分配 (Disk Storage)** 與系統運行狀態。
-  - **點擊開啟 5 / 10 / 30 / 60 分鐘歷史負載趨勢圖 (Neural Load Trend Analyzer)**：點擊 HUD 中 CPU 負載、記憶體配置 (RAM)、GPU 負載或 GPU VRAM 列即可呼叫全息趨勢分析視窗，支援四項指標即時統計（當前/尖峰/均值/最低）、專屬主題發光軌跡（青/綠/橘/紫）與游標十字準心即時數值探測。
+  - **點擊開啟 5M ~ 24H 歷史負載趨勢圖 (Neural Load Trend Analyzer)**：點擊 HUD 中 CPU 負載、記憶體配置 (RAM)、GPU 負載或 GPU VRAM 列即可呼叫全息趨勢分析視窗，支援 5 分鐘至 24 小時（`5M`、`10M`、`30M`、`1H`、`8H`、`12H`、`24H`）七種時間視窗、雙層採樣（高頻 5 秒 + 長期 60 秒晝夜緩衝）、四項指標即時統計（當前/尖峰/均值/最低）、專屬主題發光軌跡與游標十字準心即時數值探測。
   - **自主硬體與磁碟守護排程 (`hardwareSentinel`)**：背景週期巡檢，當 CPU 負載超載（>90%）、RAM 容量耗盡（>90%）或磁碟剩餘空間過低（<10 GB）時，自動觸發冷卻保護語音警告與 HUD 警報。
 - **零外部套件依賴 (Zero-Dependency Native Node.js ESM)**
   - 後端與測試完全基於 Node.js 原生模組（`node:http`、`node:fs`、`node:os`、`node:test`）建構，不產生龐大的 `node_modules`，啟動迅速且相容雲端同步資料夾。

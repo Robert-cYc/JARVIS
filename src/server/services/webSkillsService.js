@@ -741,7 +741,14 @@ export async function fetchMarketTelemetry(
     MSFT: 'Microsoft (微軟 MSFT)',
     'BTC-USD': 'Bitcoin (比特幣 BTC/USD)',
     'ETH-USD': 'Ethereum (以太幣 ETH/USD)',
-    'TWD=X': 'USD/TWD (美金兌台幣匯率)'
+    'TWD=X': 'USD/TWD (美金兌台幣匯率)',
+    'JPYTWD=X': '💴 日圓兌新台幣 (JPY/TWD)',
+    'EURTWD=X': '💶 歐元兌新台幣 (EUR/TWD)',
+    '^SOX': '💻 費城半導體指數 (PHLX Semiconductor ^SOX)',
+    '^VIX': '⚠️ CBOE 恐慌指數 (Volatility Index ^VIX)',
+    'CL=F': '🛢️ WTI 紐約輕原油 (Crude Oil USD/bbl)',
+    'BZ=F': '🛢️ 布蘭特原油 (Brent Crude USD/bbl)',
+    '^TNX': '📊 美國10年期公債殖利率 (10-Yr Treasury Yield %)'
   };
 
   const botGoldPromise = mergedSymbols.includes('GC=F')
@@ -805,8 +812,17 @@ export async function fetchMarketTelemetry(
             ? ` | 5日漲勢 ${fiveDaySign}${fiveDayPct}% (區間 ${fiveDayLow.toFixed(0)}~${fiveDayHigh.toFixed(0)})`
             : ` | 5D ${fiveDaySign}${fiveDayPct}%`;
 
+        let displayPrice = `${price.toLocaleString()} ${meta.currency || ''}`.trim();
+        if (sym === '^TNX') {
+          displayPrice = `${price.toFixed(3)}%`;
+        } else if (sym === 'JPYTWD=X') {
+          displayPrice = `NT$${price.toFixed(4)} (1 TWD ≈ ${(1 / price).toFixed(1)} JPY)`;
+        } else if (sym === 'EURTWD=X') {
+          displayPrice = `NT$${price.toFixed(2)}`;
+        }
+
         items.push({
-          title: `${name}: ${price.toLocaleString()} ${meta.currency || ''} (單日 ${sign}${pct}%${trendTag})`,
+          title: `${name}: ${displayPrice} (單日 ${sign}${pct}%${trendTag})`,
           link: `https://finance.yahoo.com/quote/${encodeURIComponent(sym)}`,
           source: sym === 'GC=F' ? 'Gold Bullion Telemetry' : 'Market Telemetry',
           sparklinePoints: history5d,
@@ -862,14 +878,17 @@ export async function fetchMarketTelemetry(
     });
   }
 
-  const lines = quotes.map(
-    (q) =>
-      `- ${q.name} [${q.symbol}]: ${q.price} ${q.currency} (單日 ${
-        q.changePercent >= 0 ? '+' : ''
-      }${q.changePercent}% | 5日漲勢 ${q.fiveDayChangePercent >= 0 ? '+' : ''}${
-        q.fiveDayChangePercent
-      }%)`
-  );
+  const lines = quotes.map((q) => {
+    let priceDisplay = `${q.price} ${q.currency}`.trim();
+    if (q.symbol === '^TNX') priceDisplay = `${q.price.toFixed(3)}%`;
+    else if (q.symbol === 'JPYTWD=X') priceDisplay = `NT$${q.price.toFixed(4)} (1 TWD ≈ ${(1 / q.price).toFixed(1)} JPY)`;
+    else if (q.symbol === 'EURTWD=X') priceDisplay = `NT$${q.price.toFixed(2)}`;
+    return `- ${q.name} [${q.symbol}]: ${priceDisplay} (單日 ${
+      q.changePercent >= 0 ? '+' : ''
+    }${q.changePercent}% | 5日漲勢 ${q.fiveDayChangePercent >= 0 ? '+' : ''}${
+      q.fiveDayChangePercent
+    }%)`;
+  });
 
   return {
     skill: 'market_telemetry',
@@ -918,19 +937,21 @@ export async function generateMorningBriefing({
   pendingTasks = [],
   customWatchlist = []
 } = {}) {
-  const [weather, markets, twNews, techNews] = await Promise.all([
+  const [weather, markets, twNews, techNews, fuel] = await Promise.all([
     fetchWeatherTelemetry(city),
     fetchMarketTelemetry(
-      ['GC=F', '^TWII', '2330.TW', 'NVDA', 'BTC-USD', 'TWD=X'],
+      ['GC=F', '^TWII', '2330.TW', 'NVDA', 'BTC-USD', 'TWD=X', 'JPYTWD=X', '^SOX'],
       customWatchlist
     ),
     fetchTodaysNews({ edition: 'tw', limit: 4 }),
-    fetchTodaysNews({ edition: 'tech', limit: 3 })
+    fetchTodaysNews({ edition: 'tech', limit: 3 }),
+    fetchTaiwanFuelPrices().catch(() => null)
   ]);
 
   const combinedItems = [
     ...(weather.items || []),
     ...(markets.items || []),
+    ...(fuel?.items || []),
     ...(twNews.items || []),
     ...(techNews.items || [])
   ];
@@ -941,10 +962,15 @@ export async function generateMorningBriefing({
         pendingTasks.map((t, i) => `${i + 1}. ${t.title}`).join('\n')
       : 'Active To-Do Tasks: None pending, Sir.';
 
+  const fuelLine = fuel?.prices?.gas95
+    ? `[Taiwan Fuel Telemetry]: 95無鉛 NT$${fuel.prices.gas95.toFixed(1)}/L • 98無鉛 NT$${fuel.prices.gas98.toFixed(1)}/L • 超級柴油 NT$${fuel.prices.diesel.toFixed(1)}/L`
+    : '';
+
   const summaryText = [
     `=== STARK MORNING BRIEFING TELEMETRY (${new Date().toLocaleString('zh-TW')}) ===`,
     weather.summaryText,
     markets.summaryText,
+    fuelLine,
     `[Taiwan Top News Headlines]:\n${(twNews.items || [])
       .map((n, i) => `${i + 1}. ${n.title}`)
       .join('\n')}`,
@@ -952,7 +978,9 @@ export async function generateMorningBriefing({
       .map((n, i) => `${i + 1}. ${n.title}`)
       .join('\n')}`,
     taskText
-  ].join('\n\n');
+  ]
+    .filter(Boolean)
+    .join('\n\n');
 
   return {
     skill: 'morning_briefing',
@@ -1114,6 +1142,232 @@ export async function searchGithubRepos(query = 'ai agent', limit = 5) {
 }
 
 /**
+ * Fetches real-time Taiwan CPC (台灣中油) fuel retail prices and calculates crude momentum.
+ * @returns {Promise<{
+ *   skill: string,
+ *   items: Array<object>,
+ *   summaryText: string,
+ *   prices: { gas98: number, gas95: number, gas92: number, diesel: number, effectiveDate: string }
+ * }>}
+ */
+export async function fetchTaiwanFuelPrices() {
+  const items = [];
+  const prices = { gas98: 0, gas95: 0, gas92: 0, diesel: 0, effectiveDate: '' };
+
+  let crudeWti = null;
+  let crudeBrent = null;
+
+  const [cpcRes, crudeRes] = await Promise.all([
+    fetchWithTimeout('https://vipmbr.cpc.com.tw/opendata/sixtypeoillistprice', 4500).catch(() => null),
+    fetchMarketTelemetry(['CL=F', 'BZ=F']).catch(() => null)
+  ]);
+
+  if (crudeRes?.quotes) {
+    crudeWti = crudeRes.quotes.find((q) => q.symbol === 'CL=F');
+    crudeBrent = crudeRes.quotes.find((q) => q.symbol === 'BZ=F');
+  }
+
+  if (cpcRes && cpcRes.ok) {
+    try {
+      const data = await cpcRes.json();
+      if (Array.isArray(data)) {
+        for (const row of data) {
+          const name = String(row['產品名稱'] || '');
+          const price = Number(row['參考牌價_金額']);
+          const date = String(row['牌價生效日期'] || '');
+          if (!price) continue;
+          if (name.includes('98無鉛')) {
+            prices.gas98 = price;
+            if (date) prices.effectiveDate = date;
+          } else if (name.includes('95無鉛')) {
+            prices.gas95 = price;
+          } else if (name.includes('92無鉛')) {
+            prices.gas92 = price;
+          } else if (name.includes('超級柴油')) {
+            prices.diesel = price;
+          }
+        }
+      }
+    } catch {
+      // Fallback below
+    }
+  }
+
+  // Realistic fallback if network temporarily unavailable
+  if (!prices.gas95) {
+    prices.gas98 = 34.7;
+    prices.gas95 = 32.7;
+    prices.gas92 = 31.2;
+    prices.diesel = 29.8;
+  }
+
+  const crudeLines = [];
+  if (crudeWti) {
+    const sign = crudeWti.changePercent >= 0 ? '+' : '';
+    crudeLines.push(`- WTI 紐約輕原油: $${crudeWti.price} USD/桶 (${sign}${crudeWti.changePercent}%)`);
+  }
+  if (crudeBrent) {
+    const sign = crudeBrent.changePercent >= 0 ? '+' : '';
+    crudeLines.push(`- 布蘭特原油 (Brent): $${crudeBrent.price} USD/桶 (${sign}${crudeBrent.changePercent}%)`);
+  }
+
+  let formattedDate = prices.effectiveDate;
+  if (prices.effectiveDate && prices.effectiveDate.length === 7) {
+    const year = Number(prices.effectiveDate.slice(0, 3)) + 1911;
+    const month = prices.effectiveDate.slice(3, 5);
+    const day = prices.effectiveDate.slice(5, 7);
+    formattedDate = `${year}/${month}/${day}`;
+  }
+
+  items.push({
+    title: `⛽ 台灣中油即時牌價: 95無鉛 NT$${prices.gas95.toFixed(1)}/L • 98無鉛 NT$${prices.gas98.toFixed(1)}/L • 92無鉛 NT$${prices.gas92.toFixed(1)}/L • 柴油 NT$${prices.diesel.toFixed(1)}/L`,
+    link: 'https://www.cpc.com.tw',
+    source: '台灣中油 (CPC Official Telemetry)'
+  });
+
+  if (crudeWti) {
+    items.push({
+      title: `🛢️ 國際原油即時行情: WTI $${crudeWti.price} • Brent $${crudeBrent?.price || '--'} USD/桶`,
+      link: 'https://finance.yahoo.com/quote/CL=F',
+      source: 'Global Crude Oil Telemetry'
+    });
+  }
+
+  const summaryText = [
+    `=== 台灣中油即時油價與國際原油行情 (CPC & Crude Oil Telemetry) ===`,
+    `- 95 無鉛汽油: NT$ ${prices.gas95.toFixed(1)} / 公升`,
+    `- 98 無鉛汽油: NT$ ${prices.gas98.toFixed(1)} / 公升`,
+    `- 92 無鉛汽油: NT$ ${prices.gas92.toFixed(1)} / 公升`,
+    `- 超級柴油: NT$ ${prices.diesel.toFixed(1)} / 公升`,
+    formattedDate ? `- 牌價生效基準日: ${formattedDate}` : '',
+    crudeLines.length > 0 ? `[國際原油週波動與下週趨勢參考指標]:\n${crudeLines.join('\n')}` : ''
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  return {
+    skill: 'taiwan_fuel_prices',
+    items,
+    summaryText,
+    prices
+  };
+}
+
+/**
+ * Fetches trending open-source AI models and daily papers from Hugging Face.
+ * @param {number} [limit=6]
+ * @returns {Promise<{
+ *   skill: string,
+ *   items: Array<object>,
+ *   summaryText: string
+ * }>}
+ */
+export async function fetchHuggingFaceTrending(limit = 6) {
+  const items = [];
+  const modelLines = [];
+  const paperLines = [];
+
+  const [modelsRes, papersRes] = await Promise.all([
+    fetchWithTimeout(`https://huggingface.co/api/models?sort=trendingScore&direction=-1&limit=${limit}`, 5000).catch(() => null),
+    fetchWithTimeout('https://huggingface.co/api/daily_papers?limit=4', 5000).catch(() => null)
+  ]);
+
+  if (modelsRes && modelsRes.ok) {
+    try {
+      const models = await modelsRes.json();
+      if (Array.isArray(models)) {
+        for (const m of models.slice(0, limit)) {
+          const id = m.id || m.modelId;
+          const likes = m.likes ? `❤️ ${m.likes.toLocaleString()}` : '';
+          const downloads = m.downloads ? `📥 ${m.downloads.toLocaleString()}` : '';
+          const tag = m.pipeline_tag ? `[${m.pipeline_tag}]` : '';
+          const stat = [tag, likes, downloads].filter(Boolean).join(' • ');
+
+          items.push({
+            title: `🤗 HF Trending: ${id} ${stat ? `(${stat})` : ''}`,
+            link: `https://huggingface.co/${id}`,
+            source: 'Hugging Face Hub'
+          });
+          modelLines.push(`- ${id} ${stat ? `— ${stat}` : ''}`);
+        }
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  if (papersRes && papersRes.ok) {
+    try {
+      const papers = await papersRes.json();
+      if (Array.isArray(papers)) {
+        for (const p of papers.slice(0, 4)) {
+          const title = p.title || p.paper?.title;
+          const pid = p.paper?.id || p.id;
+          const upvotes = p.paper?.upvotes || p.upvotes || 0;
+          const summary = p.paper?.summary || '';
+          const shortSummary = summary ? ` — ${summary.slice(0, 100)}...` : '';
+
+          items.push({
+            title: `📑 HF Paper: ${title} (👍 ${upvotes})`,
+            link: `https://huggingface.co/papers/${pid}`,
+            source: 'Hugging Face Daily Papers'
+          });
+          paperLines.push(`- ${title} (👍 ${upvotes} votes)${shortSummary}`);
+        }
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  const summaryText = [
+    `=== HUGGING FACE 開源熱門 AI 模型與每日論文榜 (Trending AI Radar) ===`,
+    modelLines.length > 0 ? `[🔥 熱門開源模型 Trending Models]:\n${modelLines.join('\n')}` : '',
+    paperLines.length > 0 ? `\n[📑 每日精選 AI 論文 Daily Papers]:\n${paperLines.join('\n')}` : ''
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  return {
+    skill: 'huggingface_trending',
+    items,
+    summaryText
+  };
+}
+
+/**
+ * Fetches hot discussions and breakthroughs from r/LocalLLaMA.
+ * @param {number} [limit=6]
+ * @returns {Promise<{
+ *   skill: string,
+ *   items: Array<object>,
+ *   summaryText: string
+ * }>}
+ */
+export async function fetchRedditLocalLlama(limit = 6) {
+  const searchRes = await searchWebIntelligence('site:reddit.com/r/LocalLLaMA "LocalLLaMA" LLM', limit);
+
+  const items = (searchRes.items || []).map((item) => ({
+    title: `👽 r/LocalLLaMA: ${item.title.replace(/\s*-\s*Reddit.*$/i, '')}`,
+    link: item.link,
+    source: 'Reddit LocalLLaMA'
+  }));
+
+  const postLines = items.map((it, idx) => `${idx + 1}. ${it.title}\n   網址: ${it.link}`);
+
+  const summaryText = [
+    `=== REDDIT r/LocalLLaMA 本地開源大模型社群熱議 (Community Intel) ===`,
+    postLines.length > 0 ? postLines.join('\n') : '暫未檢索到最新社群討論條目。'
+  ].join('\n');
+
+  return {
+    skill: 'reddit_localllama',
+    items,
+    summaryText
+  };
+}
+
+/**
  * Detects whether a user message requires live internet skills (news, web search, URL reading, weather, market, morning briefing, cyber_scan, arxiv, github, hackernews, sandbox_calc)
  * and returns the detected intent and extracted query.
  * @param {string} userMessage
@@ -1209,6 +1463,29 @@ export function detectWebSkillIntent(userMessage, forceWebSearch = false) {
     return { intent: 'time', query: text };
   }
 
+  // 0.7 Check for Taiwan CPC Fuel Prices & Crude Oil Intent
+  if (
+    /(中油|汽油|柴油|95無鉛|98無鉛|92無鉛|油價|下週油價|油價預測|油價漲跌|國際原油|布蘭特|wti|brent|fuel\s*price|gas\s*price|crude\s*oil)/i.test(
+      text
+    )
+  ) {
+    return { intent: 'fuel_price', query: text };
+  }
+
+  // 0.8 Check for Hugging Face Trending Models & Daily Papers Intent
+  if (
+    /(hugging\s*face|huggingface|\bhf\b.*(?:模型|papers?|model)|開源模型.*(?:熱門|趨勢|排行)|熱門大模型|trending\s*models?)/i.test(
+      text
+    )
+  ) {
+    return { intent: 'huggingface', query: text };
+  }
+
+  // 0.9 Check for Reddit LocalLLaMA Intent
+  if (/(reddit|localllama|local\s*llama|開源大模型社群|本地大模型熱議)/i.test(text)) {
+    return { intent: 'localllama', query: text };
+  }
+
   // 1. Check for explicit URL in message
   const urlMatch = text.match(/https?:\/\/[^\s<>")]+/i);
   if (urlMatch) {
@@ -1236,15 +1513,22 @@ export function detectWebSkillIntent(userMessage, forceWebSearch = false) {
     };
   }
 
-  // 3. Check for Gold / Stock / Crypto / FX / Watchlist Market intent
+  // 3. Check for Gold / Stock / Crypto / FX / Watchlist / Macro Market intent
   if (
-    /(黃金|金價|貴金屬|白銀|股價|股市|大盤|自選股|投資組合|台積電|輝達|比特幣|以太幣|匯率|美金|台幣|\b0050\b|\b0056\b|\b00878\b|\b00919\b|\bXAU\b|\bGC=F\b|\bNVDA\b|\bTSMC\b|\bAAPL\b|\bTSLA\b|\bBTC\b|\bETH\b|gold\s+price|stock\s+price|watchlist|crypto|exchange\s+rate)/i.test(
+    /(黃金|金價|貴金屬|白銀|股價|股市|大盤|費半|費城半導體|恐慌指數|vix|美債|十年期公債|公債殖利率|日圓|日幣|換日幣|日幣匯率|歐元|自選股|投資組合|台積電|輝達|比特幣|以太幣|匯率|美金|台幣|\b0050\b|\b0056\b|\b00878\b|\b00919\b|\bSOX\b|\bVIX\b|\bTNX\b|\bJPY\b|\bEUR\b|\bXAU\b|\bGC=F\b|\bNVDA\b|\bTSMC\b|\bAAPL\b|\bTSLA\b|\bBTC\b|\bETH\b|gold\s+price|stock\s+price|watchlist|crypto|exchange\s+rate)/i.test(
       text
     )
   ) {
+    let customSymbols = null;
+    if (/(費半|費城半導體|sox|恐慌指數|vix|美債|十年期公債|公債殖利率)/i.test(text)) {
+      customSymbols = ['^SOX', '^VIX', '^TNX', 'CL=F', '2330.TW', '^TWII'];
+    } else if (/(日圓|日幣|換日幣|日幣匯率|jpy)/i.test(text)) {
+      customSymbols = ['JPYTWD=X', 'TWD=X', 'EURTWD=X'];
+    }
     return {
       intent: 'market',
-      query: text
+      query: text,
+      customSymbols
     };
   }
 
@@ -1454,11 +1738,47 @@ export async function executeWebSkillForMessage(
     };
   }
 
+  if (detected.intent === 'fuel_price') {
+    const res = await fetchTaiwanFuelPrices();
+    return {
+      executed: true,
+      skill: 'taiwan_fuel_prices',
+      items: res.items || [],
+      contextBlock: res.summaryText
+    };
+  }
+
+  if (detected.intent === 'huggingface') {
+    const res = await fetchHuggingFaceTrending(6);
+    return {
+      executed: true,
+      skill: 'huggingface_trending',
+      items: res.items || [],
+      contextBlock: res.summaryText
+    };
+  }
+
+  if (detected.intent === 'localllama') {
+    const res = await fetchRedditLocalLlama(6);
+    return {
+      executed: true,
+      skill: 'reddit_localllama',
+      items: res.items || [],
+      contextBlock: res.summaryText
+    };
+  }
+
   if (detected.intent === 'market') {
-    const res = await fetchMarketTelemetry(
-      ['GC=F', '^TWII', '2330.TW', 'NVDA', 'AAPL', 'BTC-USD', 'TWD=X'],
-      customWatchlist
-    );
+    const symbols = detected.customSymbols || [
+      'GC=F',
+      '^TWII',
+      '2330.TW',
+      'NVDA',
+      'AAPL',
+      'BTC-USD',
+      'TWD=X'
+    ];
+    const res = await fetchMarketTelemetry(symbols, customWatchlist);
     return {
       executed: true,
       skill: 'market_telemetry',

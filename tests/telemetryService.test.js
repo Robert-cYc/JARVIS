@@ -48,6 +48,8 @@ describe('J.A.R.V.I.S. Telemetry Service', () => {
     assert.ok('gpu' in telemetry);
     assert.ok(Array.isArray(telemetry.disks));
     assert.ok(telemetry.disks.length > 0);
+    assert.ok('internet' in telemetry);
+    assert.equal(typeof telemetry.internet.online, 'boolean');
     assert.ok('arcReactorOutputPercent' in telemetry);
     assert.equal(telemetry.suitIntegrityPercent, 100);
   });
@@ -66,7 +68,7 @@ describe('J.A.R.V.I.S. Telemetry Service', () => {
     assert.ok(primary.usagePercent >= 0 && primary.usagePercent <= 100);
   });
 
-  it('records and provides 5, 10, 30, and 60 minutes historical telemetry trends with statistics', () => {
+  it('records and provides 5m, 10m, 30m, 1h, 8h, 12h, and 24h historical telemetry trends with statistics', () => {
     // Record mock points
     const now = Date.now();
     recordTelemetryHistoryPoint({
@@ -82,7 +84,7 @@ describe('J.A.R.V.I.S. Telemetry Service', () => {
       ram: 52
     });
 
-    for (const mins of [5, 10, 30, 60]) {
+    for (const mins of [5, 10, 30, 60, 480, 720, 1440]) {
       const history = getTelemetryHistory(mins);
       assert.equal(history.windowMinutes, mins);
       assert.ok(Array.isArray(history.points));

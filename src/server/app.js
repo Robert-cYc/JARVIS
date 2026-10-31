@@ -154,7 +154,8 @@ export function createServer() {
       }
 
       if (req.method === 'GET' && pathname === '/api/telemetry/history') {
-        const minutes = Number(parsedUrl.searchParams.get('minutes')) || 60;
+        const hours = Number(parsedUrl.searchParams.get('hours'));
+        const minutes = hours > 0 ? hours * 60 : (Number(parsedUrl.searchParams.get('minutes')) || 60);
         const history = getTelemetryHistory(minutes);
         sendJson(res, 200, history);
         return;

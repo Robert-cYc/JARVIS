@@ -75,6 +75,9 @@ class JarvisHudController {
     this.dom = {
       ollamaStatusDot: document.getElementById('ollamaStatusDot'),
       activeProviderLabel: document.getElementById('activeProviderLabel'),
+      netStatusPill: document.getElementById('netStatusPill'),
+      netStatusDot: document.getElementById('netStatusDot'),
+      netStatusHeader: document.getElementById('netStatusHeader'),
       arcOutputHeader: document.getElementById('arcOutputHeader'),
       hudClockPill: document.getElementById('hudClockPill'),
       hudClock: document.getElementById('hudClock'),
@@ -198,6 +201,7 @@ class JarvisHudController {
       trendStatMin: document.getElementById('trendStatMin'),
       telemetryTrendCanvas: document.getElementById('telemetryTrendCanvas'),
       trendCrosshairTooltip: document.getElementById('trendCrosshairTooltip'),
+      trendFooterTelemetry: document.getElementById('trendFooterTelemetry'),
       refreshTrendBtn: document.getElementById('refreshTrendBtn')
     };
 
@@ -609,6 +613,15 @@ class JarvisHudController {
       });
     }
 
+    window.addEventListener('online', () => this.updateInternetStatus());
+    window.addEventListener('offline', () => this.updateInternetStatus());
+
+    if (this.dom.netStatusPill) {
+      this.dom.netStatusPill.addEventListener('click', () => {
+        this.handleCheckInternetClick();
+      });
+    }
+
     if (this.dom.toggleWebSkillBtn) {
       this.dom.toggleWebSkillBtn.addEventListener('click', () => {
         this.webSearchEnabled = !this.webSearchEnabled;
@@ -850,7 +863,7 @@ class JarvisHudController {
     document.querySelectorAll('.range-tab-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         const mins = Number(btn.getAttribute('data-minutes'));
-        if (mins && [5, 10, 30, 60].includes(mins)) {
+        if (mins && [5, 10, 30, 60, 480, 720, 1440].includes(mins)) {
           this.audio.playHudClick(1750);
           this.trendActiveMinutes = mins;
           this._updateTrendTabsUi();
@@ -911,7 +924,13 @@ class JarvisHudController {
         else if (this.trendActiveMetric === 'gpu') val = typeof p.gpu === 'number' ? p.gpu : 0;
         else if (this.trendActiveMetric === 'gpuMem') val = typeof p.gpuMemoryPercent === 'number' ? p.gpuMemoryPercent : 0;
 
-        const timeStr = new Date(p.timestamp).toLocaleTimeString('zh-TW', { hour12: false });
+        const dateObj = new Date(p.timestamp);
+        let timeStr = dateObj.toLocaleTimeString('zh-TW', { hour12: false });
+        if (this.trendActiveMinutes > 60) {
+          const month = dateObj.getMonth() + 1;
+          const day = dateObj.getDate();
+          timeStr = `${month}/${day} ${timeStr}`;
+        }
         if (this.dom.trendCrosshairTooltip) {
           this.dom.trendCrosshairTooltip.classList.remove('hidden');
           const label = metricLabels[this.trendActiveMetric] || 'METRIC';
@@ -1308,8 +1327,64 @@ class JarvisHudController {
     }
   }
 
+  updateInternetStatus(serverInternet) {
+    const browserOnline = typeof navigator.onLine === 'boolean' ? navigator.onLine : true;
+    const serverOnline = serverInternet ? Boolean(serverInternet.online) : true;
+    const isOnline = browserOnline && serverOnline;
+
+    if (this.dom.netStatusDot) {
+      this.dom.netStatusDot.classList.toggle('offline', !isOnline);
+    }
+    if (this.dom.netStatusHeader) {
+      this.dom.netStatusHeader.textContent = isOnline ? 'ONLINE' : 'OFFLINE';
+      this.dom.netStatusHeader.style.color = isOnline ? 'var(--emerald)' : 'var(--crimson)';
+    }
+    if (this.dom.netStatusPill) {
+      this.dom.netStatusPill.title = `Internet Satellite Uplink: ${
+        isOnline ? 'ONLINE (Connected)' : 'OFFLINE (Disconnected)'
+      } — Click to re-test`;
+    }
+  }
+
+  async handleCheckInternetClick() {
+    this.audio.playHudClick(2100);
+    const isZh = this.dom.languageSelect?.value === 'zh-TW';
+    this.dom.reactorStateBanner.textContent = 'PROBING SATELLITE UPLINK // TESTING CONNECTIVITY...';
+
+    const start = Date.now();
+    let reachable = navigator.onLine !== false;
+    try {
+      const res = await fetch('/api/telemetry?t=' + Date.now());
+      if (!res.ok) reachable = false;
+    } catch {
+      reachable = false;
+    }
+    const latency = Date.now() - start;
+
+    this.updateInternetStatus({ online: reachable });
+
+    if (reachable) {
+      this.dom.reactorStateBanner.textContent = `UPLINK NOMINAL // INTERNET ONLINE (${latency}ms)`;
+      this.audio.speak(
+        isZh
+          ? `網際網路衛星連線狀態正常，鏈路延遲約 ${latency} 毫秒。`
+          : `Internet satellite uplink is online and nominal, Sir. Round trip latency is ${latency} milliseconds.`
+      );
+    } else {
+      this.dom.reactorStateBanner.textContent = 'UPLINK SEVERED // INTERNET OFFLINE';
+      this.audio.speak(
+        isZh
+          ? '報告，網際網路衛星連線已中斷。'
+          : 'Warning, Sir. Internet uplink appears disconnected.'
+      );
+    }
+  }
+
   _renderTelemetry(t) {
-    this.dom.arcOutputHeader.textContent = `${t.arcReactorOutputPercent}%`;
+    if (this.dom.arcOutputHeader) {
+      this.dom.arcOutputHeader.textContent = `${t.arcReactorOutputPercent}%`;
+    }
+    this.updateInternetStatus(t.internet);
     this.dom.cpuLoadText.textContent = `${t.cpuUsagePercent}%`;
     this.dom.cpuLoadBar.style.width = `${t.cpuUsagePercent}%`;
 
@@ -1703,13 +1778,46 @@ class JarvisHudController {
           )
       },
       {
-        title: '☀️ Kaohsiung Live Weather, AQI & UV Forecast (高雄天氣、空氣品質 AQI 與紫外線)',
-        tag: 'WEATHER + AQI',
+        title: '💻 PHLX Semiconductor & VIX Index (費城半導體指數、恐慌指數與美債殖利率)',
+        tag: 'MACRO SENTINEL',
         action: () =>
           this.handleSendMessage(
-            'JARVIS，請幫我查詢高雄今天的即時天氣、氣溫、降雨機率以及空氣品質 (AQI / PM2.5) 與紫外線指數，出門需要帶傘或防曬嗎？'
+            'JARVIS，請幫我查詢費城半導體指數 (^SOX)、恐慌指數 (^VIX) 以及美國10年期公債殖利率 (^TNX) 的最新市場行情。'
           )
       },
+      {
+        title: '⛽ Taiwan CPC Fuel Prices & Crude Oil (台灣中油即時油價、牌價與國際原油行情)',
+        tag: 'FUEL TELEMETRY',
+        action: () =>
+          this.handleSendMessage(
+            'JARVIS，請查詢台灣中油目前最新公佈的 92、95、98 無鉛汽油與柴油每公升牌價，以及國際原油的走勢指標。'
+          )
+      },
+      {
+        title: '💴 JPY/TWD Exchange Rate & Currency Intel (日圓兌台幣即時匯率與換匯行情)',
+        tag: 'FX MATRIX',
+        action: () =>
+          this.handleSendMessage(
+            'JARVIS，請幫我查詢日圓兌新台幣 (JPYTWD=X) 的最新即時匯率與換匯行情。'
+          )
+      },
+      {
+        title: '🤗 Hugging Face Trending Models & Daily Papers (HF 開源熱門模型與每日精選論文)',
+        tag: 'AI RADAR',
+        action: () =>
+          this.handleSendMessage(
+            'JARVIS，請檢索 Hugging Face 目前最熱門的開源 AI 模型榜單與今日精選學術論文。'
+          )
+      },
+      {
+        title: '👽 Reddit r/LocalLLaMA Hot Intel (本地開源大模型社群最新突破與熱議話題)',
+        tag: 'LOCAL LLM RADAR',
+        action: () =>
+          this.handleSendMessage(
+            'JARVIS，請搜尋 Reddit r/LocalLLaMA 社群目前最新熱議的本地開源大模型突破與話題。'
+          )
+      },
+
       {
         title: '🎧 Toggle Stark Workshop Ambient Reactor Hum (切換史塔克實驗室反應爐背景白噪音)',
         tag: 'AUDIO DSP',
@@ -1923,6 +2031,15 @@ class JarvisHudController {
       const mins = Number(btn.getAttribute('data-minutes'));
       btn.classList.toggle('active', mins === this.trendActiveMinutes);
     });
+
+    if (this.dom.trendFooterTelemetry) {
+      if (this.trendActiveMinutes > 60) {
+        const hrs = this.trendActiveMinutes / 60;
+        this.dom.trendFooterTelemetry.textContent = `SAMPLING: 60s • ARCHIVE: ${hrs}H DIURNAL BUFFER • LIVE SYNCHRONIZED`;
+      } else {
+        this.dom.trendFooterTelemetry.textContent = `SAMPLING: 5s • BUFFER: HIGH-RES (${this.trendActiveMinutes}M) • LIVE SYNCHRONIZED`;
+      }
+    }
   }
 
   _updateTrendStatsUi() {
@@ -2106,7 +2223,15 @@ class JarvisHudController {
       const t = minTime + frac * timeSpan;
       const x = padLeft + frac * plotWidth;
       const minsAgo = Math.round((maxTime - t) / 60000);
-      const label = minsAgo === 0 ? 'NOW' : `-${minsAgo}M`;
+      let label = 'NOW';
+      if (minsAgo > 0) {
+        if (minsAgo >= 60) {
+          const hrs = minsAgo / 60;
+          label = `-${hrs % 1 === 0 ? hrs : hrs.toFixed(1)}H`;
+        } else {
+          label = `-${minsAgo}M`;
+        }
+      }
       ctx.fillText(label, x, padTop + plotHeight + 6);
     }
 
