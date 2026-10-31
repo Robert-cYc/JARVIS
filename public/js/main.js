@@ -916,10 +916,14 @@ class JarvisHudController {
         const points = this.trendData?.points || [];
         if (points.length < 2) return;
 
+        const windowMins = this.trendActiveMinutes || 30;
+        const now = Date.now();
+        const startTime = this.trendData?.startTime ?? (now - windowMins * 60 * 1000);
+        const endTime = this.trendData?.endTime ?? now;
+        const timeSpan = Math.max(1000, endTime - startTime);
+
         const frac = Math.max(0, Math.min(1, (mouseX - padLeft) / plotWidth));
-        const minTime = points[0].timestamp;
-        const maxTime = points[points.length - 1].timestamp;
-        const targetTime = minTime + frac * (maxTime - minTime);
+        const targetTime = startTime + frac * timeSpan;
 
         let closestIdx = 0;
         let closestDiff = Infinity;
@@ -946,15 +950,18 @@ class JarvisHudController {
 
         const dateObj = new Date(p.timestamp);
         let timeStr = dateObj.toLocaleTimeString('zh-TW', { hour12: false });
-        if (this.trendActiveMinutes > 60) {
-          const month = dateObj.getMonth() + 1;
-          const day = dateObj.getDate();
-          timeStr = `${month}/${day} ${timeStr}`;
+        if (this.trendActiveMinutes >= 60) {
+          const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+          const day = String(dateObj.getDate()).padStart(2, '0');
+          const hours = String(dateObj.getHours()).padStart(2, '0');
+          const mins = String(dateObj.getMinutes()).padStart(2, '0');
+          timeStr = `${month}/${day} ${hours}:${mins}`;
         }
         if (this.dom.trendCrosshairTooltip) {
           this.dom.trendCrosshairTooltip.classList.remove('hidden');
           const label = metricLabels[this.trendActiveMetric] || 'METRIC';
-          this.dom.trendCrosshairTooltip.textContent = `${label}: ${val}% • ${timeStr}`;
+          const statusNote = (this.trendActiveMetric === 'gpu' && val === 0) ? ' (IDLE)' : '';
+          this.dom.trendCrosshairTooltip.textContent = `${label}: ${val}%${statusNote} • ${timeStr}`;
         }
         this.renderTrendCanvas();
       });
@@ -2200,9 +2207,11 @@ class JarvisHudController {
       return;
     }
 
-    const minTime = points[0].timestamp;
-    const maxTime = points[points.length - 1].timestamp;
-    const timeSpan = Math.max(1, maxTime - minTime);
+    const windowMins = this.trendActiveMinutes || 30;
+    const now = Date.now();
+    const startTime = this.trendData?.startTime ?? (now - windowMins * 60 * 1000);
+    const endTime = this.trendData?.endTime ?? now;
+    const timeSpan = Math.max(1000, endTime - startTime);
 
     const coords = points.map((p) => {
       let val = 0;
@@ -2211,7 +2220,8 @@ class JarvisHudController {
       else if (this.trendActiveMetric === 'gpu') val = typeof p.gpu === 'number' ? p.gpu : 0;
       else if (this.trendActiveMetric === 'gpuMem') val = typeof p.gpuMemoryPercent === 'number' ? p.gpuMemoryPercent : 0;
 
-      const x = padLeft + ((p.timestamp - minTime) / timeSpan) * plotWidth;
+      const frac = Math.max(0, Math.min(1, (p.timestamp - startTime) / timeSpan));
+      const x = padLeft + frac * plotWidth;
       const y = padTop + plotHeight - (Math.max(0, Math.min(100, val)) / 100) * plotHeight;
       return { x, y, val, timestamp: p.timestamp };
     });
@@ -2256,17 +2266,37 @@ class JarvisHudController {
     ctx.arc(latest.x, latest.y, 6, 0, Math.PI * 2);
     ctx.stroke();
 
-    // 7. Time axis ticks (-Xm ... NOW)
-    ctx.fillStyle = 'rgba(164, 198, 228, 0.65)';
+    // 7. Time axis ticks & subtle vertical grid lines (-Xm ... NOW)
+    let tickStepMins = 5;
+    if (windowMins <= 5) tickStepMins = 1;
+    else if (windowMins <= 10) tickStepMins = 2;
+    else if (windowMins <= 30) tickStepMins = 6;
+    else if (windowMins <= 60) tickStepMins = 15;
+    else if (windowMins <= 480) tickStepMins = 120; // 8H -> every 2 hours: -8H, -6H, -4H, -2H, NOW
+    else if (windowMins <= 720) tickStepMins = 180; // 12H -> every 3 hours
+    else tickStepMins = 360; // 24H -> every 6 hours
+
+    const tickCount = Math.round(windowMins / tickStepMins);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.font = '9px monospace';
-    const numTicks = 5;
-    for (let i = 0; i <= numTicks; i++) {
-      const frac = i / numTicks;
-      const t = minTime + frac * timeSpan;
+
+    for (let i = 0; i <= tickCount; i++) {
+      const minsAgo = windowMins - i * tickStepMins;
+      const frac = (windowMins - minsAgo) / windowMins;
       const x = padLeft + frac * plotWidth;
-      const minsAgo = Math.round((maxTime - t) / 60000);
+
+      if (i > 0 && i < tickCount) {
+        ctx.strokeStyle = 'rgba(0, 240, 255, 0.08)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 4]);
+        ctx.beginPath();
+        ctx.moveTo(x, padTop);
+        ctx.lineTo(x, padTop + plotHeight);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
       let label = 'NOW';
       if (minsAgo > 0) {
         if (minsAgo >= 60) {
@@ -2276,6 +2306,7 @@ class JarvisHudController {
           label = `-${minsAgo}M`;
         }
       }
+      ctx.fillStyle = 'rgba(164, 198, 228, 0.75)';
       ctx.fillText(label, x, padTop + plotHeight + 6);
     }
 

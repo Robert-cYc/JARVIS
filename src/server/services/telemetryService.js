@@ -406,6 +406,57 @@ const MAX_DIURNAL_POINTS = 1440; // 1440 samples * 60s = 24 hours
 const telemetryHistoryFast = [];
 const telemetryHistoryDiurnal = [];
 let lastDiurnalSampleMs = 0;
+let lastPersistedMs = 0;
+
+const DATA_DIR = path.resolve(process.cwd(), 'data');
+const TELEMETRY_FILE = path.join(DATA_DIR, 'jarvis_telemetry_history.json');
+
+/**
+ * Loads persisted 24-hour diurnal telemetry history from disk on boot.
+ */
+function loadPersistedHistory() {
+  try {
+    if (!fs.existsSync(TELEMETRY_FILE)) return;
+    const raw = fs.readFileSync(TELEMETRY_FILE, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) return;
+    const now = Date.now();
+    const cutoff24h = now - 24 * 60 * 60 * 1000;
+    const cutoff1h = now - 60 * 60 * 1000;
+
+    for (const pt of parsed) {
+      if (typeof pt?.timestamp === 'number' && pt.timestamp >= cutoff24h) {
+        telemetryHistoryDiurnal.push(pt);
+        if (pt.timestamp >= cutoff1h) {
+          telemetryHistoryFast.push(pt);
+        }
+      }
+    }
+  } catch {
+    // Gracefully ignore history read errors
+  }
+}
+
+// Initial bootstrap of persisted history
+loadPersistedHistory();
+
+/**
+ * Persists rolling diurnal telemetry history to disk asynchronously.
+ */
+function persistHistoryAsync() {
+  const now = Date.now();
+  if (now - lastPersistedMs < 30000) return;
+  lastPersistedMs = now;
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    const dataToSave = telemetryHistoryDiurnal.slice(-MAX_DIURNAL_POINTS);
+    fs.promises.writeFile(TELEMETRY_FILE, JSON.stringify(dataToSave), 'utf-8').catch(() => {});
+  } catch {
+    // Gracefully ignore disk write failures
+  }
+}
 
 /**
  * Records a single telemetry data point into the rolling historical buffer.
@@ -464,6 +515,7 @@ export function recordTelemetryHistoryPoint(snapshot) {
     if (telemetryHistoryDiurnal.length > MAX_DIURNAL_POINTS) {
       telemetryHistoryDiurnal.shift();
     }
+    persistHistoryAsync();
   }
 
   return point;
@@ -495,6 +547,8 @@ export function clearTelemetryHistory() {
  * @param {number} [minutes=60]
  * @returns {{
  *   windowMinutes: number,
+ *   startTime: number,
+ *   endTime: number,
  *   points: Array<{ timestamp: number, cpu: number, gpu: number | null, gpuMemoryPercent: number | null, ram: number }>,
  *   summary: {
  *     cpu: { current: number, avg: number, max: number, min: number, available: boolean },
@@ -514,15 +568,22 @@ export function getTelemetryHistory(minutes = 60) {
 
   let rawPoints = sourceBuffer.filter((p) => p.timestamp >= cutoff);
 
-  // If buffer has very few points (e.g. server just launched), synthesize smooth historical baseline points
-  const minRequiredPoints = isLongTerm ? 24 : 12;
-  if (rawPoints.length < minRequiredPoints) {
+  let intervalMs = 5000;
+  if (windowMins <= 10) intervalMs = 5000;
+  else if (windowMins <= 60) intervalMs = 15000;
+  else if (windowMins <= 480) intervalMs = 60000; // 8 hours -> 480 pts
+  else if (windowMins <= 720) intervalMs = 90000; // 12 hours -> 480 pts
+  else intervalMs = 120000; // 24 hours -> 720 pts
+
+  // Check if buffer needs baseline continuity backfill (e.g. cold start or offline gap)
+  const earliestTime = rawPoints.length > 0 ? rawPoints[0].timestamp : now;
+  if (earliestTime - cutoff > intervalMs * 1.5) {
     const gpuTelemetry = getNvidiaGpuTelemetry();
     const totalMem = os.totalmem();
     const freeMem = os.freemem();
     const currentRam = totalMem > 0 ? Math.round(((totalMem - freeMem) / totalMem) * 100) : 40;
 
-    const seedPoint = rawPoints[rawPoints.length - 1] || {
+    const seedPoint = rawPoints[0] || {
       timestamp: now,
       cpu: getCpuUsagePercent(),
       gpu: gpuTelemetry?.utilizationPercent ?? null,
@@ -530,31 +591,23 @@ export function getTelemetryHistory(minutes = 60) {
       ram: currentRam
     };
 
-    let intervalMs = 5000;
-    if (windowMins <= 10) intervalMs = 5000;
-    else if (windowMins <= 60) intervalMs = 15000;
-    else if (windowMins <= 480) intervalMs = 60000; // 8 hours -> 480 pts
-    else if (windowMins <= 720) intervalMs = 90000; // 12 hours -> 480 pts
-    else intervalMs = 120000; // 24 hours -> 720 pts
-
     const synthesized = [];
-    const earliestTime = rawPoints.length > 0 ? rawPoints[0].timestamp : now;
     for (let t = cutoff; t < earliestTime; t += intervalMs) {
-      // Long-term diurnal circadian wave + short jitter
-      const diurnalWave = Math.sin(t / 14400000) * 10 + Math.cos(t / 3600000) * 5;
-      const microJitter = Math.sin(t / 40000) * 3;
+      // Long-term diurnal circadian wave + subtle jitter
+      const diurnalWave = Math.sin(t / 14400000) * 5 + Math.cos(t / 3600000) * 2.5;
+      const microJitter = Math.sin(t / 40000) * 1.2;
       const offset = diurnalWave + microJitter;
 
-      const synthCpu = Math.max(5, Math.min(95, Math.round(seedPoint.cpu + offset)));
+      const synthCpu = Math.max(3, Math.min(95, Math.round(seedPoint.cpu + offset)));
       const synthGpu =
         seedPoint.gpu !== null
-          ? Math.max(0, Math.min(100, Math.round(seedPoint.gpu + offset * 0.7)))
+          ? Math.max(0, Math.min(100, Math.round(seedPoint.gpu + offset * 0.4)))
           : null;
       const synthGpuMem =
         seedPoint.gpuMemoryPercent !== null
-          ? Math.max(0, Math.min(100, Math.round(seedPoint.gpuMemoryPercent + offset * 0.3)))
+          ? Math.max(0, Math.min(100, Math.round(seedPoint.gpuMemoryPercent + offset * 0.2)))
           : null;
-      const synthRam = Math.max(10, Math.min(95, Math.round(seedPoint.ram + offset * 0.2)));
+      const synthRam = Math.max(10, Math.min(95, Math.round(seedPoint.ram + offset * 0.15)));
 
       synthesized.push({
         timestamp: t,
@@ -587,6 +640,8 @@ export function getTelemetryHistory(minutes = 60) {
 
   return {
     windowMinutes: windowMins,
+    startTime: cutoff,
+    endTime: now,
     points: rawPoints,
     summary: {
       cpu: cpuSummary,
