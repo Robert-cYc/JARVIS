@@ -50,7 +50,9 @@ import {
   updateAutomationSettings,
   generateScheduledMorningBriefing,
   generateEndOfDayDebrief,
-  checkServiceHealth
+  checkServiceHealth,
+  checkUptimeSentinel,
+  restartOllamaService
 } from './services/automationService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -481,6 +483,19 @@ export function createServer() {
         const alerts = await checkServiceHealth();
         const state = await getAutomationState();
         sendJson(res, 200, { serviceStatus: state.serviceStatus, alerts });
+        return;
+      }
+
+      if (req.method === 'GET' && pathname === '/api/automation/uptime') {
+        const alerts = await checkUptimeSentinel();
+        const state = await getAutomationState();
+        sendJson(res, 200, { uptimeStatus: state.uptimeStatus, alerts });
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/automation/ollama/restart') {
+        const result = restartOllamaService();
+        sendJson(res, 200, result);
         return;
       }
 

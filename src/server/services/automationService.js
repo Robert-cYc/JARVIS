@@ -6,10 +6,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { checkTcpPort } from './networkScannerService.js';
 import { getVaultState } from './memoryVaultService.js';
-import { fetchMarketTelemetry, fetchWeatherTelemetry, fetchTodaysNews } from './webSkillsService.js';
+import { fetchMarketTelemetry, fetchWeatherTelemetry, fetchTodaysNews, fetchTaiwanFuelPrices } from './webSkillsService.js';
 import { getSystemTelemetry } from './telemetryService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -23,6 +24,11 @@ export const DEFAULT_MONITORED_SERVICES = [
   { name: 'PostgreSQL Database', port: 5432, host: '127.0.0.1' }
 ];
 
+export const DEFAULT_UPTIME_ENDPOINTS = [
+  { name: 'Google Search', url: 'https://www.google.com', expectedStatus: 200, timeoutMs: 5000 },
+  { name: 'GitHub Status', url: 'https://www.githubstatus.com', expectedStatus: 200, timeoutMs: 5000 }
+];
+
 const DEFAULT_STATE = {
   settings: {
     morningBriefing: {
@@ -32,13 +38,32 @@ const DEFAULT_STATE = {
     },
     endOfDayDebrief: {
       enabled: true,
-      time: '18:00', // HH:MM
+      time: '18:30', // HH:MM
       autoSaveMarkdown: true
     },
     serviceSentinel: {
       enabled: true,
       intervalSec: 30,
-      services: DEFAULT_MONITORED_SERVICES
+      services: DEFAULT_MONITORED_SERVICES,
+      autoRestartOllama: true,
+      restartCooldownMs: 60000
+    },
+    uptimeSentinel: {
+      enabled: true,
+      intervalSec: 60,
+      endpoints: DEFAULT_UPTIME_ENDPOINTS
+    },
+    fridayFuelAlert: {
+      enabled: true,
+      dayOfWeek: 5, // Friday
+      time: '17:00'
+    },
+    hourlyChime: {
+      enabled: true
+    },
+    focusHealthSentinel: {
+      enabled: true,
+      intervalMinutes: 50
     },
     hardwareSentinel: {
       enabled: true,
@@ -51,10 +76,15 @@ const DEFAULT_STATE = {
   },
   lastFired: {
     morningBriefingDate: '',
-    endOfDayDebriefDate: ''
+    endOfDayDebriefDate: '',
+    fridayFuelAlertDate: '',
+    lastChimeHour: -1,
+    lastFocusAlertMs: 0
   },
   hardwareCooldowns: {},
-  serviceStatus: {} // { "Ollama Local LLM": { open: true, lastCheck: "..." } }
+  serviceStatus: {}, // { "Ollama Local LLM": { open: true, lastCheck: "..." } }
+  uptimeStatus: {}, // { "https://...": { name: "...", isUp: true, statusCode: 200, latencyMs: 50, lastCheck: "..." } }
+  lastOllamaRestartMs: 0
 };
 
 let autoLock = Promise.resolve();
@@ -78,11 +108,17 @@ export async function getAutomationState(filePath = DEFAULT_AUTOMATION_PATH) {
         morningBriefing: { ...DEFAULT_STATE.settings.morningBriefing, ...(parsed.settings?.morningBriefing || {}) },
         endOfDayDebrief: { ...DEFAULT_STATE.settings.endOfDayDebrief, ...(parsed.settings?.endOfDayDebrief || {}) },
         serviceSentinel: { ...DEFAULT_STATE.settings.serviceSentinel, ...(parsed.settings?.serviceSentinel || {}) },
+        uptimeSentinel: { ...DEFAULT_STATE.settings.uptimeSentinel, ...(parsed.settings?.uptimeSentinel || {}) },
+        fridayFuelAlert: { ...DEFAULT_STATE.settings.fridayFuelAlert, ...(parsed.settings?.fridayFuelAlert || {}) },
+        hourlyChime: { ...DEFAULT_STATE.settings.hourlyChime, ...(parsed.settings?.hourlyChime || {}) },
+        focusHealthSentinel: { ...DEFAULT_STATE.settings.focusHealthSentinel, ...(parsed.settings?.focusHealthSentinel || {}) },
         hardwareSentinel: { ...DEFAULT_STATE.settings.hardwareSentinel, ...(parsed.settings?.hardwareSentinel || {}) }
       },
       lastFired: { ...DEFAULT_STATE.lastFired, ...(parsed.lastFired || {}) },
       hardwareCooldowns: parsed.hardwareCooldowns || {},
-      serviceStatus: parsed.serviceStatus || {}
+      serviceStatus: parsed.serviceStatus || {},
+      uptimeStatus: parsed.uptimeStatus || {},
+      lastOllamaRestartMs: typeof parsed.lastOllamaRestartMs === 'number' ? parsed.lastOllamaRestartMs : 0
     };
   } catch {
     return structuredClone(DEFAULT_STATE);
@@ -115,6 +151,18 @@ export async function updateAutomationSettings(patch, filePath = DEFAULT_AUTOMAT
     }
     if (patch.serviceSentinel) {
       state.settings.serviceSentinel = { ...state.settings.serviceSentinel, ...patch.serviceSentinel };
+    }
+    if (patch.uptimeSentinel) {
+      state.settings.uptimeSentinel = { ...state.settings.uptimeSentinel, ...patch.uptimeSentinel };
+    }
+    if (patch.fridayFuelAlert) {
+      state.settings.fridayFuelAlert = { ...state.settings.fridayFuelAlert, ...patch.fridayFuelAlert };
+    }
+    if (patch.hourlyChime) {
+      state.settings.hourlyChime = { ...state.settings.hourlyChime, ...patch.hourlyChime };
+    }
+    if (patch.focusHealthSentinel) {
+      state.settings.focusHealthSentinel = { ...state.settings.focusHealthSentinel, ...patch.focusHealthSentinel };
     }
     if (patch.hardwareSentinel) {
       state.settings.hardwareSentinel = {
@@ -260,16 +308,41 @@ export async function generateEndOfDayDebrief({ saveToFile = true, reportsDir = 
 }
 
 // ---------------------------------------------------------------------------
-// 6. Localhost Service Health Sentinel (Ollama, Port 3000, Postgres, etc.)
+// 6. Localhost Service Health Sentinel & Ollama Auto-Restart Self-Healing
 // ---------------------------------------------------------------------------
 
 /**
+ * Spawns an Ollama instance to recover local LLM service.
+ * @param {object} [options]
+ * @param {Function} [options.spawner]
+ * @returns {{success: boolean, pid?: number, error?: string}}
+ */
+export function restartOllamaService({ spawner = spawn } = {}) {
+  try {
+    const proc = spawner('ollama', ['serve'], {
+      detached: true,
+      stdio: 'ignore'
+    });
+    if (proc && typeof proc.unref === 'function') {
+      proc.unref();
+    }
+    return { success: true, pid: proc?.pid };
+  } catch (err) {
+    console.warn(`[J.A.R.V.I.S. AUTOMATION] Ollama auto-restart spawn error: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
  * Checks the status of all configured services and detects any transition (online -> offline or offline -> online).
+ * Automatically triggers Ollama self-healing restart if Ollama crashes.
  * @param {Array<{name: string, port: number, host?: string}>} [services]
  * @param {string} [filePath]
- * @returns {Promise<Array<{name: string, port: number, status: 'offline'|'recovered', message: string}>>} Alert events
+ * @param {object} [options]
+ * @param {Function} [options.spawner]
+ * @returns {Promise<Array<{name: string, port: number, status: 'offline'|'recovered'|'restarted', message: string, kind?: string, title?: string, speechText?: string}>>} Alert events
  */
-export async function checkServiceHealth(services, filePath = DEFAULT_AUTOMATION_PATH) {
+export async function checkServiceHealth(services, filePath = DEFAULT_AUTOMATION_PATH, { spawner = spawn } = {}) {
   const state = await getAutomationState(filePath);
   const targetServices = services || state.settings.serviceSentinel.services || DEFAULT_MONITORED_SERVICES;
   const alertEvents = [];
@@ -285,12 +358,16 @@ export async function checkServiceHealth(services, filePath = DEFAULT_AUTOMATION
     const currentState = await getAutomationState(filePath);
     const prevStatus = currentState.serviceStatus || {};
     const updatedStatus = { ...prevStatus };
+    const nowMs = Date.now();
+    const autoRestart = currentState.settings.serviceSentinel?.autoRestartOllama ?? true;
+    const cooldownMs = currentState.settings.serviceSentinel?.restartCooldownMs ?? 60000;
+    const lastRestart = currentState.lastOllamaRestartMs || 0;
 
     for (const chk of checks) {
       const wasOpen = prevStatus[chk.name]?.open;
       const isOpen = chk.open;
 
-      // Transition detected
+      // Transition detected: online -> offline
       if (wasOpen === true && isOpen === false) {
         alertEvents.push({
           name: chk.name,
@@ -298,6 +375,25 @@ export async function checkServiceHealth(services, filePath = DEFAULT_AUTOMATION
           status: 'offline',
           message: `⚠️ 本機服務警告：${chk.name} (Port ${chk.port}) 失去連線，已停止響應。`
         });
+
+        // Option 1: Ollama auto-restart self healing
+        if (chk.name.toLowerCase().includes('ollama') && autoRestart) {
+          if (nowMs - lastRestart >= cooldownMs) {
+            currentState.lastOllamaRestartMs = nowMs;
+            const restartRes = restartOllamaService({ spawner });
+            if (restartRes.success) {
+              alertEvents.push({
+                name: chk.name,
+                port: chk.port,
+                status: 'restarted',
+                kind: 'service_alert',
+                title: '🔄 OLLAMA AUTO-RESTART',
+                message: `檢測到 Ollama 離線 (Port ${chk.port})，J.A.R.V.I.S. 自我修復協定已自動重啟 Ollama (ollama serve)。`,
+                speechText: '檢測到 Ollama 服務離線，J.A.R.V.I.S. 已啟動自我修復並為您重新啟動 Ollama 服務。'
+              });
+            }
+          }
+        }
       } else if (wasOpen === false && isOpen === true) {
         alertEvents.push({
           name: chk.name,
@@ -316,6 +412,99 @@ export async function checkServiceHealth(services, filePath = DEFAULT_AUTOMATION
     }
 
     currentState.serviceStatus = updatedStatus;
+    await saveAutomationState(currentState, filePath);
+    return alertEvents;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 7. Custom Website / API Uptime Sentinel Monitor
+// ---------------------------------------------------------------------------
+
+/**
+ * Checks the uptime of configured external/internal websites and APIs.
+ * @param {Array<{name: string, url: string, expectedStatus?: number, timeoutMs?: number}>} [endpoints]
+ * @param {string} [filePath]
+ * @param {object} [options]
+ * @param {Function} [options.fetcher]
+ * @returns {Promise<Array<{name: string, url: string, status: 'down'|'recovered', statusCode?: number, latencyMs: number, message: string, speechText: string}>>}
+ */
+export async function checkUptimeSentinel(endpoints, filePath = DEFAULT_AUTOMATION_PATH, { fetcher = fetch } = {}) {
+  const state = await getAutomationState(filePath);
+  const targetEndpoints = endpoints || state.settings.uptimeSentinel?.endpoints || DEFAULT_UPTIME_ENDPOINTS;
+  if (!state.settings.uptimeSentinel?.enabled && !endpoints) {
+    return [];
+  }
+
+  const alertEvents = [];
+
+  const checks = await Promise.all(
+    targetEndpoints.map(async (ep) => {
+      const start = Date.now();
+      const timeoutMs = ep.timeoutMs || 5000;
+      let isUp = false;
+      let statusCode = 0;
+      try {
+        const res = await fetcher(ep.url, {
+          signal: AbortSignal.timeout(timeoutMs),
+          headers: { 'User-Agent': 'JARVIS-Uptime-Sentinel/85.0' }
+        });
+        statusCode = res.status;
+        const expected = ep.expectedStatus || 200;
+        isUp = statusCode === expected || (expected === 200 && res.ok);
+      } catch (err) {
+        isUp = false;
+        statusCode = 0;
+      }
+      const latencyMs = Date.now() - start;
+      return { name: ep.name, url: ep.url, isUp, statusCode, latencyMs };
+    })
+  );
+
+  return withLock(async () => {
+    const currentState = await getAutomationState(filePath);
+    const prevStatus = currentState.uptimeStatus || {};
+    const updatedStatus = { ...prevStatus };
+
+    for (const chk of checks) {
+      const prev = prevStatus[chk.url];
+      const wasUp = prev ? prev.isUp : undefined;
+
+      if (wasUp === true && chk.isUp === false) {
+        const msg = `⚠️ 網站/API 異常：${chk.name} (${chk.url}) 失去連線或回應異常代碼 (狀態碼: ${chk.statusCode || 'Timeout'})。`;
+        alertEvents.push({
+          name: chk.name,
+          url: chk.url,
+          status: 'down',
+          statusCode: chk.statusCode,
+          latencyMs: chk.latencyMs,
+          message: msg,
+          speechText: `Sir，監控端點 ${chk.name} 目前離線，連線異常。`
+        });
+      } else if (wasUp === false && chk.isUp === true) {
+        const msg = `✅ 網站/API 復原：${chk.name} (${chk.url}) 已恢復正常連線 (${chk.latencyMs}ms)。`;
+        alertEvents.push({
+          name: chk.name,
+          url: chk.url,
+          status: 'recovered',
+          statusCode: chk.statusCode,
+          latencyMs: chk.latencyMs,
+          message: msg,
+          speechText: `Sir，監控端點 ${chk.name} 已恢復正常連線。`
+        });
+      }
+
+      updatedStatus[chk.url] = {
+        name: chk.name,
+        url: chk.url,
+        isUp: chk.isUp,
+        statusCode: chk.statusCode,
+        latencyMs: chk.latencyMs,
+        lastCheck: new Date().toISOString()
+      };
+    }
+
+    currentState.uptimeStatus = updatedStatus;
     await saveAutomationState(currentState, filePath);
     return alertEvents;
   });
@@ -444,8 +633,18 @@ let schedulerTimer = null;
  * @param {(event: {kind: string, title: string, message: string, speechText?: string, markdownReport?: string}) => void} deps.onEvent
  * @param {string} [deps.filePath]
  * @param {Date} [deps.currentTime]
+ * @param {Function} [deps.fetchPrices]
+ * @param {Function} [deps.spawner]
+ * @param {Function} [deps.fetcher]
  */
-export async function runAutomationTick({ onEvent, filePath = DEFAULT_AUTOMATION_PATH, currentTime = new Date() }) {
+export async function runAutomationTick({
+  onEvent,
+  filePath = DEFAULT_AUTOMATION_PATH,
+  currentTime = new Date(),
+  fetchPrices = fetchTaiwanFuelPrices,
+  spawner = spawn,
+  fetcher = fetch
+}) {
   const state = await getAutomationState(filePath);
   const now = currentTime;
   const currentHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -473,7 +672,7 @@ export async function runAutomationTick({ onEvent, filePath = DEFAULT_AUTOMATION
     }
   }
 
-  // 2. Scheduled End-of-Day Debrief Check
+  // 2. Scheduled End-of-Day Tactical Debrief Check (Option 2: 18:30 Markdown Auto-Generation)
   if (
     state.settings.endOfDayDebrief.enabled &&
     state.settings.endOfDayDebrief.time === currentHHMM &&
@@ -495,16 +694,94 @@ export async function runAutomationTick({ onEvent, filePath = DEFAULT_AUTOMATION
     }
   }
 
-  // 3. Service Sentinel Health Check
+  // 3. Friday Afternoon Upcoming Fuel Price Alert (Option 2: Friday 17:00 Alert)
+  const fuelCfg = state.settings.fridayFuelAlert;
+  if (
+    fuelCfg?.enabled &&
+    now.getDay() === (fuelCfg.dayOfWeek ?? 5) &&
+    currentHHMM === (fuelCfg.time || '17:00') &&
+    state.lastFired.fridayFuelAlertDate !== currentDateKey
+  ) {
+    state.lastFired.fridayFuelAlertDate = currentDateKey;
+    await saveAutomationState(state, filePath);
+
+    try {
+      const fuel = await fetchPrices().catch(() => null);
+      const p = fuel?.prices || {};
+      const speech = `Sir，週五油價週末戰備提醒：台灣中油目前最新牌價：95無鉛每公升 ${p.gas95 || '31.0'} 元、98無鉛 ${p.gas98 || '33.0'} 元。下週油價調整前，建議您於週末前評估愛車油量排程。`;
+      const md = [
+        `### ⛽ 台灣中油週五牌價週末預警`,
+        `- **95 無鉛汽油**: $${p.gas95 || '-'} 元 / 公升`,
+        `- **98 無鉛汽油**: $${p.gas98 || '-'} 元 / 公升`,
+        `- **92 無鉛汽油**: $${p.gas92 || '-'} 元 / 公升`,
+        `- **超級柴油**: $${p.diesel || '-'} 元 / 公升`,
+        `- **牌價生效日期**: ${p.effectiveDate || '即時牌價'}`,
+        `---`,
+        `*週末油料戰術建議：下週油價生效前，建議評估油箱存量，及早加油以維持最佳出勤狀態，Sir。*`
+      ].join('\n');
+
+      onEvent({
+        kind: 'friday_fuel_alert',
+        title: '⛽ 台灣中油週五油價週末戰備預警',
+        message: md,
+        speechText: speech
+      });
+    } catch (err) {
+      console.warn(`[J.A.R.V.I.S. AUTOMATION] Friday fuel alert trigger failed: ${err.message}`);
+    }
+  }
+
+  // 4. Hourly Vocal Chrono Chime (Option 3)
+  const chimeCfg = state.settings.hourlyChime;
+  if (
+    chimeCfg?.enabled &&
+    now.getMinutes() === 0 &&
+    state.lastFired.lastChimeHour !== now.getHours()
+  ) {
+    state.lastFired.lastChimeHour = now.getHours();
+    await saveAutomationState(state, filePath);
+
+    const h = now.getHours();
+    const padH = String(h).padStart(2, '0');
+    onEvent({
+      kind: 'hourly_chime',
+      title: `🔔 J.A.R.V.I.S. 整點報時 [${padH}:00]`,
+      message: `現在時間是 ${h} 點整。方舟反應爐與主機遙測系統運作正常，Sir。`,
+      speechText: `Sir，現在時間是 ${h} 點整。`
+    });
+  }
+
+  // 5. 50-Minute Continuous Coding Posture & Optics Rest Alert (Option 3)
+  const focusCfg = state.settings.focusHealthSentinel;
+  if (focusCfg?.enabled) {
+    const intervalMs = Math.max(1, focusCfg.intervalMinutes || 50) * 60 * 1000;
+    const nowMs = now.getTime();
+    if (!state.lastFired.lastFocusAlertMs) {
+      state.lastFired.lastFocusAlertMs = nowMs;
+      await saveAutomationState(state, filePath);
+    } else if (nowMs - state.lastFired.lastFocusAlertMs >= intervalMs) {
+      state.lastFired.lastFocusAlertMs = nowMs;
+      await saveAutomationState(state, filePath);
+
+      onEvent({
+        kind: 'focus_health_alert',
+        title: '🧘 護眼與姿態健康提醒 (50分鐘專注)',
+        message: 'Sir，您已持續專注工作 50 分鐘。建議您起立活動頸椎與背部肌群，並遠眺 6 公尺（20 呎）外景物以放鬆眼部睫狀肌。',
+        speechText: 'Sir，您已持續專注工作 50 分鐘。請稍微站起伸展，放鬆雙眼。'
+      });
+    }
+  }
+
+  // 6. Service Sentinel Health Check & Ollama Self-Healing (Option 1)
   if (state.settings.serviceSentinel.enabled) {
     try {
-      const alerts = await checkServiceHealth(state.settings.serviceSentinel.services, filePath);
+      const alerts = await checkServiceHealth(state.settings.serviceSentinel.services, filePath, { spawner });
       for (const al of alerts) {
         onEvent({
-          kind: 'service_alert',
-          title: al.status === 'offline' ? `🚨 SERVICE OFFLINE: ${al.name}` : `🟢 SERVICE RESTORED: ${al.name}`,
+          kind: al.kind || 'service_alert',
+          title: al.title || (al.status === 'offline' ? `🚨 SERVICE OFFLINE: ${al.name}` : `🟢 SERVICE RESTORED: ${al.name}`),
           message: al.message,
-          speechText: al.message
+          speechText: al.speechText || al.message
         });
       }
     } catch (err) {
@@ -512,7 +789,24 @@ export async function runAutomationTick({ onEvent, filePath = DEFAULT_AUTOMATION
     }
   }
 
-  // 4. Hardware (CPU, RAM, Disk) Sentinel Check
+  // 7. Custom Website / API Uptime Sentinel Check (Option 1)
+  if (state.settings.uptimeSentinel?.enabled) {
+    try {
+      const uptimeAlerts = await checkUptimeSentinel(state.settings.uptimeSentinel.endpoints, filePath, { fetcher });
+      for (const al of uptimeAlerts) {
+        onEvent({
+          kind: 'uptime_alert',
+          title: al.status === 'down' ? `🚨 ENDPOINT DOWN: ${al.name}` : `🟢 ENDPOINT RESTORED: ${al.name}`,
+          message: al.message,
+          speechText: al.speechText
+        });
+      }
+    } catch (err) {
+      console.warn(`[J.A.R.V.I.S. AUTOMATION] Uptime sentinel check error: ${err.message}`);
+    }
+  }
+
+  // 8. Hardware (CPU, RAM, Disk) Sentinel Check
   if (state.settings.hardwareSentinel?.enabled) {
     try {
       const hwAlerts = await checkHardwareHealth({

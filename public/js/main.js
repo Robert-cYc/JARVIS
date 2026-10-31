@@ -1150,6 +1150,10 @@ class JarvisHudController {
     const isBriefing = evt.kind === 'morning_briefing';
     const isDebrief = evt.kind === 'end_of_day_debrief';
     const isService = evt.kind === 'service_alert';
+    const isUptime = evt.kind === 'uptime_alert';
+    const isFuel = evt.kind === 'friday_fuel_alert';
+    const isChime = evt.kind === 'hourly_chime';
+    const isFocus = evt.kind === 'focus_health_alert';
 
     let sender = 'J.A.R.V.I.S. // PRICE SENTINEL';
     let badge = 'PRICE ALERT';
@@ -1165,7 +1169,22 @@ class JarvisHudController {
       badge = 'END-OF-DAY REPORT';
     } else if (isService) {
       sender = 'J.A.R.V.I.S. // SERVICE SENTINEL';
-      badge = 'PORT HEALTH';
+      badge = 'SERVICE REPAIR';
+    } else if (isUptime) {
+      sender = 'J.A.R.V.I.S. // UPTIME SENTINEL';
+      badge = 'ENDPOINT MONITOR';
+    } else if (isFuel) {
+      sender = 'J.A.R.V.I.S. // FUEL SENTINEL';
+      badge = 'TAIWAN FUEL';
+    } else if (isChime) {
+      sender = 'J.A.R.V.I.S. // CHRONO SENTINEL';
+      badge = 'HOURLY CHIME';
+      if (this.audio && typeof this.audio.playHourlyChime === 'function') {
+        this.audio.playHourlyChime();
+      }
+    } else if (isFocus) {
+      sender = 'J.A.R.V.I.S. // HEALTH SENTINEL';
+      badge = 'POSTURE & OPTICS';
     }
 
     const spoken = evt.speechText || `${honorific}，${evt.message}`;

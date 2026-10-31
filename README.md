@@ -180,3 +180,20 @@ npm test
 | `POST` | `/api/skills/sandbox` | 史塔克量子沙盒：安全執行數學運算、SHA-256、Base64 與 UUID |
 | `GET` | `/api/skills/rnd` | 研發情報檢索（支援 `?type=arxiv\|github\|hn&q=關鍵字`） |
 | `GET/POST/DELETE` | `/api/vault*` | 長期記憶庫與待辦事項管理 |
+| `GET/POST` | `/api/automation*` | 史塔克自動化核心：定時晨報、18:30 下班戰術總結、服務自我修復、網站 Uptime 哨兵與週五油價預警 |
+
+---
+
+### 🤖 史塔克自動化哨兵核心 (Stark Autonomous Automation)
+
+J.A.R.V.I.S. 內建 30 秒輪巡的高精度無鎖排程器，無需額外外部套件即可自主執行各項常駐哨兵守護：
+
+1. **Option 1: 服務自我修復與網站 Uptime 哨兵**
+   - **Ollama Crash Auto-Restart**: 當監控到本機 Ollama (Port 11434) 失去響應時，自動觸發自我修復協定 (`ollama serve`) 並語音通知。
+   - **Uptime Sentinel**: 持續輪詢自訂之對外服務或內部 API 端點，發生連線異常或復原時即刻發布全息警報。
+2. **Option 2: 週五油價週末戰備與 18:30 每日戰術總結**
+   - **Friday Fuel Alert**: 每週五下午 17:00 自主調閱台灣中油最新油價牌價與原油走勢，提醒週末加油戰備排程。
+   - **18:30 Daily Tactical Debrief**: 每日傍晚 18:30 自動彙整今日已完成/進行中任務與自選股盤後表現，自動產出 Markdown 日誌儲存至 `reports/`。
+3. **Option 3: 整點語音報時與 50 分鐘專注健康提醒**
+   - **Hourly Chrono Chime**: 每逢整點 (`:00`) 自動播放史塔克諧波報時音效，並以語音播報當前標準時間與作息叮嚀。
+   - **Focus & Health Sentinel**: 連續工作達 50 分鐘時自動觸發護眼與姿態健康警報，提醒起立活動頸椎並遠眺放鬆睫狀肌。
