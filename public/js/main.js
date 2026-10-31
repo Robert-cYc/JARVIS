@@ -652,9 +652,6 @@ class JarvisHudController {
         const launchUrl = btn.getAttribute('data-launch-url');
         if (launchUrl) {
           window.open(launchUrl, '_blank', 'noopener,noreferrer');
-          if (btn.id === 'launchSolarSystemBtn') {
-            fetch('/api/launch/solar-system', { method: 'POST' }).catch(() => {});
-          }
         }
         const prompt = btn.getAttribute('data-prompt');
         if (prompt) {
@@ -662,6 +659,13 @@ class JarvisHudController {
         }
       });
     });
+
+    const solarBtn = document.getElementById('launchSolarSystemBtn');
+    if (solarBtn) {
+      solarBtn.addEventListener('click', () => {
+        this.launchSolarSystem();
+      });
+    }
 
     const ipScannerBtn = document.getElementById('launchIpScannerBtn');
     if (ipScannerBtn) {
@@ -1863,9 +1867,7 @@ class JarvisHudController {
         title: '🪐 SolarSystem(太陽系) // 3D Planetary Simulation (啟動太陽系)',
         tag: 'SIMULATION',
         action: () => {
-          window.open('/solarSystem/index.html', '_blank', 'noopener,noreferrer');
-          fetch('/api/launch/solar-system', { method: 'POST' }).catch(() => {});
-          this.handleSendMessage('JARVIS，請啟動 3D 太陽系全息模擬系統 (SolarSystem)。');
+          this.launchSolarSystem();
         }
       },
       {
@@ -2471,15 +2473,13 @@ class JarvisHudController {
     return { card, body, badgeEl };
   }
 
+  launchSolarSystem() {
+    this.audio.playHudClick(1700);
+    window.open('/solarSystem/index.html', '_blank', 'noopener,noreferrer');
+  }
+
   launchIpScanner() {
     this.audio.playHudClick(1700);
-    this.appendMessage({
-      role: 'assistant',
-      sender: 'J.A.R.V.I.S. // TACTICAL RADAR',
-      content: '📡 正在為您啟動 IP Scanner (區域網路雷達)...\n正在主機背景執行 `ipScanner/Autorun.bat` 並開啟 http://localhost:63210。',
-      speechText: 'Sir，已為您啟動 IP Scanner 網路雷達系統。',
-      badge: 'LAN RADAR'
-    });
     this.audio.speak('Sir，已為您啟動 IP Scanner 網路雷達系統。');
     window.open('http://localhost:63210', '_blank', 'noopener,noreferrer');
     fetch('/api/launch/ip-scanner', { method: 'POST' }).catch((err) => {

@@ -2006,6 +2006,11 @@ export function executeLocalAppLaunch(launchAction) {
 
   let launchedAny = false;
   for (const item of launchAction.apps) {
+    if (item.appId === 'solarsystem') {
+      // SolarSystem is served via HTTP and opened in browser by the client HUD
+      launchedAny = true;
+      continue;
+    }
     const spec = LOCAL_APP_CATALOG.find((a) => a.appId === item.appId);
     if (!spec) continue;
 

@@ -23,7 +23,8 @@ import {
 } from './services/webSkillsService.js';
 import {
   runCyberSecurityScan,
-  evaluateQuantumSandbox
+  evaluateQuantumSandbox,
+  checkTcpPort
 } from './services/networkScannerService.js';
 import {
   getVaultState,
@@ -616,9 +617,13 @@ export function createServer() {
         const ipScannerDir = path.resolve(process.cwd(), 'ipScanner');
         let launched = false;
         try {
-          if (process.platform === 'win32') {
+          const isUp = await checkTcpPort(63210, '127.0.0.1', 200).catch(() => ({ open: false }));
+          if (isUp.open) {
+            launched = true;
+          } else if (process.platform === 'win32') {
             const child = spawn('cmd.exe', ['/c', 'start', 'Local Network IP Scanner', 'cmd.exe', '/c', 'Autorun.bat'], {
               cwd: ipScannerDir,
+              env: { ...process.env, NO_BROWSER: '1' },
               detached: true,
               stdio: 'ignore'
             });
@@ -626,13 +631,19 @@ export function createServer() {
             child.unref();
             launched = true;
           } else if (process.platform === 'darwin') {
-            const child = spawn('open', [ipScannerBatPath], { cwd: ipScannerDir, detached: true, stdio: 'ignore' });
+            const child = spawn('open', [ipScannerBatPath], {
+              cwd: ipScannerDir,
+              env: { ...process.env, NO_BROWSER: '1' },
+              detached: true,
+              stdio: 'ignore'
+            });
             child.on('error', () => {});
             child.unref();
             launched = true;
           } else {
             const child = spawn('bash', ['-c', `cd "${ipScannerDir}" && ./Autorun.bat`], {
               cwd: ipScannerDir,
+              env: { ...process.env, NO_BROWSER: '1' },
               detached: true,
               stdio: 'ignore'
             });
