@@ -169,6 +169,13 @@ describe('J.A.R.V.I.S. Web Skills & News Service', () => {
     assert.ok(solarCmd.apps.some((a) => a.appId === 'solarsystem'));
     assert.equal(solarCmd.url, '/solarSystem/index.html');
 
+    const ipScannerCmd = detectLauncherCommand('JARVIS，請啟動 IP Scanner (網路雷達) 掃描區域網路。');
+    assert.ok(ipScannerCmd);
+    assert.equal(ipScannerCmd.executed, true);
+    assert.equal(ipScannerCmd.type, 'local_app');
+    assert.ok(ipScannerCmd.apps.some((a) => a.appId === 'ipscanner'));
+    assert.ok(ipScannerCmd.label.includes('IP Scanner'));
+
     const humOnCmd = detectLauncherCommand('JARVIS，請開啟反應爐環境音');
     assert.ok(humOnCmd);
     assert.equal(humOnCmd.type, 'ambient_hum');

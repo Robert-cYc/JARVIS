@@ -1897,6 +1897,17 @@ const LOCAL_APP_CATALOG = [
     macArgs: [path.resolve(process.cwd(), 'solarSystem/index.html')],
     linuxCmd: 'xdg-open',
     linuxArgs: [path.resolve(process.cwd(), 'solarSystem/index.html')]
+  },
+  {
+    appId: 'ipscanner',
+    label: 'IP Scanner(網路雷達)',
+    pattern: /\bip\s*scanner\b|網路雷達|區域網路掃描|lan\s*radar/i,
+    winCmd: 'cmd.exe',
+    winArgs: ['/c', 'start', '', path.resolve(process.cwd(), 'ipScanner/Autorun.bat')],
+    macApp: 'Terminal',
+    macArgs: [path.resolve(process.cwd(), 'ipScanner/Autorun.bat')],
+    linuxCmd: 'bash',
+    linuxArgs: [path.resolve(process.cwd(), 'ipScanner/Autorun.bat')]
   }
 ];
 

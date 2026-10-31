@@ -610,6 +610,49 @@ export function createServer() {
         return;
       }
 
+      // Launch IP Scanner application (Autorun.bat) directly on host OS
+      if (req.method === 'POST' && pathname === '/api/launch/ip-scanner') {
+        const ipScannerBatPath = path.resolve(process.cwd(), 'ipScanner', 'Autorun.bat');
+        const ipScannerDir = path.resolve(process.cwd(), 'ipScanner');
+        let launched = false;
+        try {
+          if (process.platform === 'win32') {
+            const child = spawn('cmd.exe', ['/c', 'start', '', ipScannerBatPath], {
+              cwd: ipScannerDir,
+              detached: true,
+              stdio: 'ignore'
+            });
+            child.on('error', () => {});
+            child.unref();
+            launched = true;
+          } else if (process.platform === 'darwin') {
+            const child = spawn('open', [ipScannerBatPath], { cwd: ipScannerDir, detached: true, stdio: 'ignore' });
+            child.on('error', () => {});
+            child.unref();
+            launched = true;
+          } else {
+            const child = spawn('bash', ['-c', `cd "${ipScannerDir}" && ./Autorun.bat`], {
+              cwd: ipScannerDir,
+              detached: true,
+              stdio: 'ignore'
+            });
+            child.on('error', () => {});
+            child.unref();
+            launched = true;
+          }
+        } catch {
+          launched = false;
+        }
+
+        sendJson(res, 200, {
+          success: true,
+          launched,
+          filePath: ipScannerBatPath,
+          webUrl: 'http://localhost:63210'
+        });
+        return;
+      }
+
       // Serve SolarSystem application files
       if (pathname === '/solarSystem' || pathname.startsWith('/solarSystem/')) {
         const relSolar = pathname === '/solarSystem' || pathname === '/solarSystem/'

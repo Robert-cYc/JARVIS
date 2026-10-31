@@ -663,6 +663,13 @@ class JarvisHudController {
       });
     });
 
+    const ipScannerBtn = document.getElementById('launchIpScannerBtn');
+    if (ipScannerBtn) {
+      ipScannerBtn.addEventListener('click', () => {
+        this.launchIpScanner();
+      });
+    }
+
     // Collapsible HUD Panel Sections (01 // – 08 //)
     document.querySelectorAll('.panel-section.collapsible > .section-header').forEach((header) => {
       header.title = header.title || 'Click to expand or collapse (點擊展開或收合)';
@@ -1862,6 +1869,13 @@ class JarvisHudController {
         }
       },
       {
+        title: '📡 IP Scanner(網路雷達) // LAN Scanner & Radar (啟動網路雷達)',
+        tag: 'RADAR',
+        action: () => {
+          this.launchIpScanner();
+        }
+      },
+      {
         title: '🎯 Toggle Focus Layout — Hide Side Panels (切換專注版面 Ctrl+Shift+F)',
         tag: 'LAYOUT',
         action: () => this.setFocusLayout(!this.focusLayout)
@@ -2455,6 +2469,21 @@ class JarvisHudController {
     }
 
     return { card, body, badgeEl };
+  }
+
+  launchIpScanner() {
+    this.audio.playHudClick(1700);
+    this.appendMessage({
+      role: 'assistant',
+      sender: 'J.A.R.V.I.S. // TACTICAL RADAR',
+      content: '📡 正在為您啟動 IP Scanner (區域網路雷達)...\n正在主機背景執行 `ipScanner/Autorun.bat` 並連結至 http://localhost:63210。',
+      speechText: 'Sir，已為您啟動 IP Scanner 網路雷達系統。',
+      badge: 'LAN RADAR'
+    });
+    this.audio.speak('Sir，已為您啟動 IP Scanner 網路雷達系統。');
+    fetch('/api/launch/ip-scanner', { method: 'POST' }).catch((err) => {
+      console.warn('[J.A.R.V.I.S.] Failed to launch IP Scanner:', err);
+    });
   }
 
   startTacticalTimer(durationSeconds) {
