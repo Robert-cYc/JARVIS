@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { checkTcpPort } from './networkScannerService.js';
 import { getVaultState } from './memoryVaultService.js';
 import { fetchMarketTelemetry, fetchWeatherTelemetry, fetchTodaysNews } from './webSkillsService.js';
+import { getSystemTelemetry } from './telemetryService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,12 +39,21 @@ const DEFAULT_STATE = {
       enabled: true,
       intervalSec: 30,
       services: DEFAULT_MONITORED_SERVICES
+    },
+    hardwareSentinel: {
+      enabled: true,
+      cpuThresholdPercent: 90,
+      ramThresholdPercent: 90,
+      diskMinFreeGb: 10,
+      diskMaxUsagePercent: 90,
+      cooldownMinutes: 15
     }
   },
   lastFired: {
     morningBriefingDate: '',
     endOfDayDebriefDate: ''
   },
+  hardwareCooldowns: {},
   serviceStatus: {} // { "Ollama Local LLM": { open: true, lastCheck: "..." } }
 };
 
@@ -67,9 +77,11 @@ export async function getAutomationState(filePath = DEFAULT_AUTOMATION_PATH) {
       settings: {
         morningBriefing: { ...DEFAULT_STATE.settings.morningBriefing, ...(parsed.settings?.morningBriefing || {}) },
         endOfDayDebrief: { ...DEFAULT_STATE.settings.endOfDayDebrief, ...(parsed.settings?.endOfDayDebrief || {}) },
-        serviceSentinel: { ...DEFAULT_STATE.settings.serviceSentinel, ...(parsed.settings?.serviceSentinel || {}) }
+        serviceSentinel: { ...DEFAULT_STATE.settings.serviceSentinel, ...(parsed.settings?.serviceSentinel || {}) },
+        hardwareSentinel: { ...DEFAULT_STATE.settings.hardwareSentinel, ...(parsed.settings?.hardwareSentinel || {}) }
       },
       lastFired: { ...DEFAULT_STATE.lastFired, ...(parsed.lastFired || {}) },
+      hardwareCooldowns: parsed.hardwareCooldowns || {},
       serviceStatus: parsed.serviceStatus || {}
     };
   } catch {
@@ -103,6 +115,13 @@ export async function updateAutomationSettings(patch, filePath = DEFAULT_AUTOMAT
     }
     if (patch.serviceSentinel) {
       state.settings.serviceSentinel = { ...state.settings.serviceSentinel, ...patch.serviceSentinel };
+    }
+    if (patch.hardwareSentinel) {
+      state.settings.hardwareSentinel = {
+        ...DEFAULT_STATE.settings.hardwareSentinel,
+        ...state.settings.hardwareSentinel,
+        ...patch.hardwareSentinel
+      };
     }
     await saveAutomationState(state, filePath);
     return state;
@@ -303,6 +322,117 @@ export async function checkServiceHealth(services, filePath = DEFAULT_AUTOMATION
 }
 
 // ---------------------------------------------------------------------------
+// 7. Hardware (CPU, RAM) & Storage Capacity Sentinel
+// ---------------------------------------------------------------------------
+
+/**
+ * Evaluates host hardware (CPU, RAM) and storage volume telemetry against sentinel thresholds.
+ * @param {object} [options]
+ * @param {object} [options.settings]
+ * @param {string} [options.filePath]
+ * @param {object} [options.telemetry] - optional injected telemetry for testing
+ * @returns {Promise<Array<{
+ *   kind: 'hardware_alert',
+ *   metric: 'cpu' | 'ram' | 'disk',
+ *   severity: 'warning' | 'critical',
+ *   title: string,
+ *   message: string,
+ *   speechText: string
+ * }>>}
+ */
+export async function checkHardwareHealth({
+  settings,
+  filePath = DEFAULT_AUTOMATION_PATH,
+  telemetry = null
+} = {}) {
+  const state = await getAutomationState(filePath);
+  const cfg = {
+    ...DEFAULT_STATE.settings.hardwareSentinel,
+    ...(state.settings?.hardwareSentinel || {}),
+    ...(settings || {})
+  };
+
+  if (!cfg.enabled) {
+    return [];
+  }
+
+  const currentTelemetry = telemetry || getSystemTelemetry();
+  const alertEvents = [];
+  const nowMs = Date.now();
+  const cooldownMs = Math.max(1, cfg.cooldownMinutes || 15) * 60 * 1000;
+
+  return withLock(async () => {
+    const currentState = await getAutomationState(filePath);
+    const cooldowns = currentState.hardwareCooldowns || {};
+
+    const isCooldownActive = (key) => {
+      const last = cooldowns[key];
+      return typeof last === 'number' && nowMs - last < cooldownMs;
+    };
+
+    // 1. CPU Load Check
+    const cpuUsage = typeof currentTelemetry.cpuUsagePercent === 'number' ? currentTelemetry.cpuUsagePercent : 0;
+    if (cpuUsage >= cfg.cpuThresholdPercent) {
+      if (!isCooldownActive('cpu')) {
+        cooldowns['cpu'] = nowMs;
+        alertEvents.push({
+          kind: 'hardware_alert',
+          metric: 'cpu',
+          severity: cpuUsage >= 95 ? 'critical' : 'warning',
+          title: `⚠️ CPU 負載超載警戒 (${cpuUsage}%)`,
+          message: `主機 CPU 運算負載已達 ${cpuUsage}%，已超過 ${cfg.cpuThresholdPercent}% 設定警戒值。`,
+          speechText: `Sir，主機 CPU 運算負載已達百分之 ${cpuUsage}，已超過安全警戒水位。`
+        });
+      }
+    }
+
+    // 2. RAM Memory Check
+    const ramUsage = typeof currentTelemetry.memoryUsagePercent === 'number' ? currentTelemetry.memoryUsagePercent : 0;
+    const freeGb = currentTelemetry.memoryFreeGb ?? 0;
+    if (ramUsage >= cfg.ramThresholdPercent) {
+      if (!isCooldownActive('ram')) {
+        cooldowns['ram'] = nowMs;
+        alertEvents.push({
+          kind: 'hardware_alert',
+          metric: 'ram',
+          severity: ramUsage >= 95 ? 'critical' : 'warning',
+          title: `⚠️ 記憶體容量警戒 (${ramUsage}%)`,
+          message: `主機 RAM 記憶體使用率已達 ${ramUsage}% (剩餘 ${freeGb} GB)，已超過 ${cfg.ramThresholdPercent}% 警戒值。`,
+          speechText: `Sir，主機記憶體使用率已達百分之 ${ramUsage}，剩餘容量不足，建議清理背景行程。`
+        });
+      }
+    }
+
+    // 3. Disk Space Capacity Check
+    const disks = Array.isArray(currentTelemetry.disks) ? currentTelemetry.disks : [];
+    for (const disk of disks) {
+      const driveKey = disk.drive || disk.path || 'Primary';
+      const key = `disk:${driveKey}`;
+      const isLowFree = typeof disk.freeGb === 'number' && disk.freeGb < cfg.diskMinFreeGb;
+      const isHighUsage = typeof disk.usagePercent === 'number' && disk.usagePercent >= cfg.diskMaxUsagePercent;
+
+      if (isLowFree || isHighUsage) {
+        if (!isCooldownActive(key)) {
+          cooldowns[key] = nowMs;
+          alertEvents.push({
+            kind: 'hardware_alert',
+            metric: 'disk',
+            severity: typeof disk.freeGb === 'number' && disk.freeGb < 5 ? 'critical' : 'warning',
+            title: `⚠️ 磁碟容量告急 [${driveKey}]`,
+            message: `磁碟槽 [${driveKey}] 剩餘空間僅 ${disk.freeGb} GB (${disk.usagePercent}% 已滿)，已低於安全門檻 ${cfg.diskMinFreeGb} GB。`,
+            speechText: `Sir，${driveKey} 槽磁碟空間僅剩 ${disk.freeGb} GB，已達容量警戒水位。`
+          });
+        }
+      }
+    }
+
+    currentState.hardwareCooldowns = cooldowns;
+    await saveAutomationState(currentState, filePath);
+    return alertEvents;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Autonomous Automation Scheduler Loop
 // ---------------------------------------------------------------------------
 
@@ -379,6 +509,26 @@ export async function runAutomationTick({ onEvent, filePath = DEFAULT_AUTOMATION
       }
     } catch (err) {
       console.warn(`[J.A.R.V.I.S. AUTOMATION] Service health check error: ${err.message}`);
+    }
+  }
+
+  // 4. Hardware (CPU, RAM, Disk) Sentinel Check
+  if (state.settings.hardwareSentinel?.enabled) {
+    try {
+      const hwAlerts = await checkHardwareHealth({
+        settings: state.settings.hardwareSentinel,
+        filePath
+      });
+      for (const al of hwAlerts) {
+        onEvent({
+          kind: 'hardware_alert',
+          title: al.title,
+          message: al.message,
+          speechText: al.speechText
+        });
+      }
+    } catch (err) {
+      console.warn(`[J.A.R.V.I.S. AUTOMATION] Hardware sentinel error: ${err.message}`);
     }
   }
 }

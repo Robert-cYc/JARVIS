@@ -2,7 +2,8 @@ import {
   executeWebSkillForMessage,
   detectLauncherCommand,
   executeLocalAppLaunch,
-  detectTimerCommand
+  detectTimerCommand,
+  detectWebSkillIntent
 } from './webSkillsService.js';
 import {
   getVaultState,
@@ -83,8 +84,12 @@ export function buildJarvisSystemPrompt({
       'Always respond in refined British English, addressing the user as "' + honorific + '".';
   }
 
+  const now = new Date();
+  const timeDirective = `Current System Chronometer (Wall-Clock Date & Time): ${now.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' })} ${now.toLocaleTimeString('en-US', { hour12: true })} (${now.toLocaleTimeString('zh-TW', { hour12: false })}). When greeting or asked about the time, ALWAYS cite this chronometer. NEVER use host uptime.`;
+
   return [
     'You are J.A.R.V.I.S. (Just A Rather Very Intelligent System), Tony Stark\'s advanced AI assistant managing the Stark Industries Mark LXXXV HUD and Workshop mainframe.',
+    timeDirective,
     modeConfig.instruction,
     languageRule,
     'Formatting & Vocalization Rules:',
@@ -275,17 +280,20 @@ export async function generateJarvisResponse({
   const vaultState = await getVaultState();
   const vaultContext = formatVaultContextForPrompt(vaultState);
   const hw = getSystemTelemetry();
+  const now = new Date();
+  const currentWallClock = `${now.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' })} ${now.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}`;
   const gpuLine =
     hw.gpu && hw.gpu.available
       ? `- GPU: ${hw.gpu.name} (VRAM: ${hw.gpu.memoryUsedGb} GB / ${hw.gpu.memoryTotalGb} GB [${hw.gpu.memoryUsagePercent}%], Core Util: ${hw.gpu.utilizationPercent}%, Temp: ${hw.gpu.temperatureC}°C)\n`
       : '';
   const hwContext =
     `[REAL-TIME HOST HARDWARE TELEMETRY]:\n` +
+    `- Current System Wall-Clock Time: ${currentWallClock}\n` +
     `- Hostname: ${hw.hostname} | OS: ${hw.platform} (${hw.osRelease}) | IPv4: ${hw.networkIp}\n` +
     `- CPU: ${hw.cpuModel} (${hw.cpuCores} Logical Cores, Current Load: ${hw.cpuUsagePercent}%)\n` +
     gpuLine +
     `- Memory: ${hw.memoryUsedGb} GB used / ${hw.memoryTotalGb} GB total (${hw.memoryUsagePercent}% used, ${hw.memoryFreeGb} GB free)\n` +
-    `- System Uptime: ${hw.uptimeFormatted} | Mark LXXXV Arc Reactor Output: ${hw.arcReactorOutputPercent}%`;
+    `- Host Continuous Power-On Duration: ${Math.floor(hw.uptimeSeconds / 3600)} hours and ${Math.floor((hw.uptimeSeconds % 3600) / 60)} minutes of elapsed runtime (NOTE: This is NOT the time of day) | Mark LXXXV Arc Reactor Output: ${hw.arcReactorOutputPercent}%`;
 
   const systemPrompt = [baseSystemPrompt, hwContext, vaultContext]
     .filter(Boolean)
@@ -300,13 +308,18 @@ export async function generateJarvisResponse({
 
   // 2. Execute live Web / Weather / Market / Morning Briefing skills if applicable
   let webSkillResult = { executed: false, skill: 'none', items: [], contextBlock: '' };
-  if (webSearchEnabled && !launchAction && !timerAction) {
-    const pendingTasks = (vaultState.tasks || []).filter((t) => !t.completed);
-    webSkillResult = await executeWebSkillForMessage(lastUserMessage, {
-      forceWebSearch,
-      pendingTasks,
-      customWatchlist: vaultState.watchlist || []
-    });
+  if (!launchAction && !timerAction) {
+    const timeIntent = detectWebSkillIntent(lastUserMessage, false);
+    if (timeIntent.intent === 'time') {
+      webSkillResult = await executeWebSkillForMessage(lastUserMessage, { forceWebSearch: false });
+    } else if (webSearchEnabled) {
+      const pendingTasks = (vaultState.tasks || []).filter((t) => !t.completed);
+      webSkillResult = await executeWebSkillForMessage(lastUserMessage, {
+        forceWebSearch,
+        pendingTasks,
+        customWatchlist: vaultState.watchlist || []
+      });
+    }
   }
 
   const enrichedHistory = [...normalizedHistory];
@@ -685,17 +698,20 @@ export async function streamJarvisResponse(params, sendEvent) {
   const vaultState = await getVaultState();
   const vaultContext = formatVaultContextForPrompt(vaultState);
   const hw = getSystemTelemetry();
+  const now = new Date();
+  const currentWallClock = `${now.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' })} ${now.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}`;
   const gpuLine =
     hw.gpu && hw.gpu.available
       ? `- GPU: ${hw.gpu.name} (VRAM: ${hw.gpu.memoryUsedGb} GB / ${hw.gpu.memoryTotalGb} GB [${hw.gpu.memoryUsagePercent}%], Core Util: ${hw.gpu.utilizationPercent}%, Temp: ${hw.gpu.temperatureC}°C)\n`
       : '';
   const hwContext =
     `[REAL-TIME HOST HARDWARE TELEMETRY]:\n` +
+    `- Current System Wall-Clock Time: ${currentWallClock}\n` +
     `- Hostname: ${hw.hostname} | OS: ${hw.platform} (${hw.osRelease}) | IPv4: ${hw.networkIp}\n` +
     `- CPU: ${hw.cpuModel} (${hw.cpuCores} Logical Cores, Current Load: ${hw.cpuUsagePercent}%)\n` +
     gpuLine +
     `- Memory: ${hw.memoryUsedGb} GB used / ${hw.memoryTotalGb} GB total (${hw.memoryUsagePercent}% used)\n` +
-    `- Uptime: ${hw.uptimeFormatted} | Arc Reactor Output: ${hw.arcReactorOutputPercent}%`;
+    `- Host Continuous Power-On Duration: ${Math.floor(hw.uptimeSeconds / 3600)} hours and ${Math.floor((hw.uptimeSeconds % 3600) / 60)} minutes of elapsed runtime (NOTE: This is NOT the time of day) | Arc Reactor Output: ${hw.arcReactorOutputPercent}%`;
 
   const systemPrompt = [baseSystemPrompt, hwContext, vaultContext]
     .filter(Boolean)
@@ -708,13 +724,18 @@ export async function streamJarvisResponse(params, sendEvent) {
   const timerAction = detectTimerCommand(lastUserMessage);
 
   let webSkillResult = { executed: false, skill: 'none', items: [], contextBlock: '' };
-  if (webSearchEnabled && !launchAction && !timerAction) {
-    const pendingTasks = (vaultState.tasks || []).filter((t) => !t.completed);
-    webSkillResult = await executeWebSkillForMessage(lastUserMessage, {
-      forceWebSearch,
-      pendingTasks,
-      customWatchlist: vaultState.watchlist || []
-    });
+  if (!launchAction && !timerAction) {
+    const timeIntent = detectWebSkillIntent(lastUserMessage, false);
+    if (timeIntent.intent === 'time') {
+      webSkillResult = await executeWebSkillForMessage(lastUserMessage, { forceWebSearch: false });
+    } else if (webSearchEnabled) {
+      const pendingTasks = (vaultState.tasks || []).filter((t) => !t.completed);
+      webSkillResult = await executeWebSkillForMessage(lastUserMessage, {
+        forceWebSearch,
+        pendingTasks,
+        customWatchlist: vaultState.watchlist || []
+      });
+    }
   }
 
   // Emit metadata immediately so HUD shows satellite uplink / launcher / timer / vault status before tokens arrive

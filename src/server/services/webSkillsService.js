@@ -1200,6 +1200,15 @@ export function detectWebSkillIntent(userMessage, forceWebSearch = false) {
     return { intent: 'github', query: cleaned || 'ai agent' };
   }
 
+  // 0.6 Check for Current Clock / Time Intent (報時 / 現在幾點 / What time is it)
+  if (
+    /(現在幾點|幾點|時間|現在時間|當前時間|現在幾點幾分|報時|看時間|問時間|what\s*(?:is|'s|s)?\s*(?:the\s*)?(?:current\s*)?time|what\s+time|\btell\s+me\s+(?:the\s*)?time|\bcurrent\s+time\b|\btime\s+(?:now|right\s+now|please)\b|^time\??$)/i.test(
+      text.trim()
+    )
+  ) {
+    return { intent: 'time', query: text };
+  }
+
   // 1. Check for explicit URL in message
   const urlMatch = text.match(/https?:\/\/[^\s<>")]+/i);
   if (urlMatch) {
@@ -1298,6 +1307,41 @@ export async function executeWebSkillForMessage(
 
   if (detected.intent === 'none') {
     return { executed: false, skill: 'none', items: [], contextBlock: '' };
+  }
+
+  if (detected.intent === 'time') {
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('zh-TW', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      weekday: 'long'
+    });
+    const timeStr24 = now.toLocaleTimeString('zh-TW', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+    const timeStr12En = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    const hour = now.getHours();
+    const mins = now.getMinutes();
+    const period = hour < 5 ? '凌晨' : hour < 8 ? '清晨' : hour < 11 ? '上午' : hour < 13 ? '中午' : hour < 18 ? '下午' : '晚間';
+    const displayHour12 = hour % 12 === 0 ? 12 : hour % 12;
+
+    const timeBlock =
+      `[ACCURATE SYSTEM CHRONOMETER / CURRENT TIME TELEMETRY]:\n` +
+      `- 當前時間 (Current Wall-Clock Time): ${timeStr12En} (${period} ${displayHour12} 點 ${mins} 分, 24-hr: ${timeStr24})\n` +
+      `- Date: ${dateStr}\n` +
+      `- ISO: ${now.toISOString()}\n` +
+      `[CRITICAL DIRECTIVE: The user is asking for the current time. You MUST state the exact current wall-clock time (${timeStr12En} / ${period} ${displayHour12} 點 ${mins} 分) directly in J.A.R.V.I.S.'s signature butler persona (e.g., "The current time is ${timeStr12En}, Sir." or "報告 Sir，現在時間是 ${period} ${displayHour12} 點 ${mins} 分。"). OVERRIDE and IGNORE any conflicting past timestamps or uptime references.]`;
+
+    return {
+      executed: true,
+      skill: 'current_time',
+      items: [{ date: dateStr, time: timeStr24, timeEn: timeStr12En, period, iso: now.toISOString() }],
+      contextBlock: timeBlock
+    };
   }
 
   if (detected.intent === 'morning_briefing') {

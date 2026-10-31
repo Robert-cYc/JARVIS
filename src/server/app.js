@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { getSystemTelemetry } from './services/telemetryService.js';
+import { getSystemTelemetry, getTelemetryHistory } from './services/telemetryService.js';
 import {
   getOllamaStatus,
   generateJarvisResponse,
@@ -98,6 +98,14 @@ async function readJsonBody(req) {
  * @param {object} payload
  */
 function sendJson(res, statusCode, payload) {
+  if (res.headersSent) {
+    if (!res.writableEnded) {
+      try {
+        res.end();
+      } catch {}
+    }
+    return;
+  }
   const body = JSON.stringify(payload);
   res.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -142,6 +150,13 @@ export function createServer() {
           getOllamaStatus(customOllamaUrl)
         ]);
         sendJson(res, 200, { telemetry, ollama });
+        return;
+      }
+
+      if (req.method === 'GET' && pathname === '/api/telemetry/history') {
+        const minutes = Number(parsedUrl.searchParams.get('minutes')) || 60;
+        const history = getTelemetryHistory(minutes);
+        sendJson(res, 200, history);
         return;
       }
 
@@ -214,13 +229,22 @@ export function createServer() {
           'Connection': 'keep-alive'
         });
 
-        const reader = upstream.body.getReader();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          res.write(value);
+        try {
+          const reader = upstream.body.getReader();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (!res.writableEnded && !res.destroyed) {
+              res.write(value);
+            }
+          }
+        } catch (pullErr) {
+          console.warn(`[J.A.R.V.I.S. PULL] Stream read error: ${pullErr.message}`);
+        } finally {
+          if (!res.writableEnded) {
+            res.end();
+          }
         }
-        res.end();
         return;
       }
 
@@ -476,10 +500,19 @@ export function createServer() {
           'Connection': 'keep-alive'
         });
 
-        await streamJarvisResponse(body, (eventObj) => {
-          res.write(`${JSON.stringify(eventObj)}\n`);
-        });
-        res.end();
+        try {
+          await streamJarvisResponse(body, (eventObj) => {
+            if (!res.writableEnded && !res.destroyed) {
+              res.write(`${JSON.stringify(eventObj)}\n`);
+            }
+          });
+        } catch (streamErr) {
+          console.warn(`[J.A.R.V.I.S. STREAM] Streaming error: ${streamErr.message}`);
+        } finally {
+          if (!res.writableEnded) {
+            res.end();
+          }
+        }
         return;
       }
 
@@ -605,6 +638,14 @@ export function createServer() {
       });
       res.end(fileBuffer);
     } catch (error) {
+      if (res.headersSent) {
+        if (!res.writableEnded) {
+          try {
+            res.end();
+          } catch {}
+        }
+        return;
+      }
       if (error && error.code === 'ENOENT') {
         sendJson(res, 404, { error: 'Holographic resource not found, Sir.' });
         return;

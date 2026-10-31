@@ -107,14 +107,19 @@ class JarvisHudController {
       hostPlatformBadge: document.getElementById('hostPlatformBadge'),
       cpuLoadText: document.getElementById('cpuLoadText'),
       cpuLoadBar: document.getElementById('cpuLoadBar'),
+      cpuMetricRow: document.getElementById('cpuMetricRow'),
       gpuNeuralRow: document.getElementById('gpuNeuralRow'),
       gpuLoadText: document.getElementById('gpuLoadText'),
       gpuLoadBar: document.getElementById('gpuLoadBar'),
       gpuMetricRow: document.getElementById('gpuMetricRow'),
       gpuMemLoadText: document.getElementById('gpuMemLoadText'),
       gpuMemLoadBar: document.getElementById('gpuMemLoadBar'),
+      memMetricRow: document.getElementById('memMetricRow'),
       memLoadText: document.getElementById('memLoadText'),
       memLoadBar: document.getElementById('memLoadBar'),
+      diskMetricRow: document.getElementById('diskMetricRow'),
+      diskLoadText: document.getElementById('diskLoadText'),
+      diskLoadBar: document.getElementById('diskLoadBar'),
       cpuModelText: document.getElementById('cpuModelText'),
       gpuModelRow: document.getElementById('gpuModelRow'),
       gpuModelText: document.getElementById('gpuModelText'),
@@ -178,8 +183,29 @@ class JarvisHudController {
       commandPaletteModal: document.getElementById('commandPaletteModal'),
       closeCmdPaletteBtn: document.getElementById('closeCmdPaletteBtn'),
       cmdPaletteInput: document.getElementById('cmdPaletteInput'),
-      cmdPaletteList: document.getElementById('cmdPaletteList')
+      cmdPaletteList: document.getElementById('cmdPaletteList'),
+
+      telemetryTrendModal: document.getElementById('telemetryTrendModal'),
+      closeTrendModalBtn: document.getElementById('closeTrendModalBtn'),
+      trendTargetBadge: document.getElementById('trendTargetBadge'),
+      cpuTrendTabBtn: document.getElementById('cpuTrendTabBtn'),
+      ramTrendTabBtn: document.getElementById('ramTrendTabBtn'),
+      gpuTrendTabBtn: document.getElementById('gpuTrendTabBtn'),
+      gpuMemTrendTabBtn: document.getElementById('gpuMemTrendTabBtn'),
+      trendStatCurrent: document.getElementById('trendStatCurrent'),
+      trendStatPeak: document.getElementById('trendStatPeak'),
+      trendStatAvg: document.getElementById('trendStatAvg'),
+      trendStatMin: document.getElementById('trendStatMin'),
+      telemetryTrendCanvas: document.getElementById('telemetryTrendCanvas'),
+      trendCrosshairTooltip: document.getElementById('trendCrosshairTooltip'),
+      refreshTrendBtn: document.getElementById('refreshTrendBtn')
     };
+
+    this.trendActiveMetric = 'cpu';
+    this.trendActiveMinutes = 30;
+    this.trendData = null;
+    this.trendRefreshTimer = null;
+    this.trendHoverIndex = -1;
   }
 
   _initVisualizer() {
@@ -752,10 +778,154 @@ class JarvisHudController {
         } else {
           this.closeCommandPalette();
         }
-      } else if (e.key === 'Escape' && !this.dom.commandPaletteModal?.classList.contains('hidden')) {
-        this.closeCommandPalette();
+      } else if (e.key === 'Escape') {
+        if (!this.dom.telemetryTrendModal?.classList.contains('hidden')) {
+          this.closeTelemetryTrendModal();
+        } else if (!this.dom.commandPaletteModal?.classList.contains('hidden')) {
+          this.closeCommandPalette();
+        }
       }
     });
+
+    // Telemetry Trend Analyzer Modal (5, 10, 30, 60 mins)
+    if (this.dom.cpuMetricRow) {
+      this.dom.cpuMetricRow.addEventListener('click', () => this.openTelemetryTrendModal('cpu'));
+    }
+    if (this.dom.memMetricRow) {
+      this.dom.memMetricRow.addEventListener('click', () => this.openTelemetryTrendModal('ram'));
+    }
+    if (this.dom.gpuNeuralRow) {
+      this.dom.gpuNeuralRow.addEventListener('click', () => this.openTelemetryTrendModal('gpu'));
+    }
+    if (this.dom.gpuMetricRow) {
+      this.dom.gpuMetricRow.addEventListener('click', () => this.openTelemetryTrendModal('gpuMem'));
+    }
+    if (this.dom.closeTrendModalBtn) {
+      this.dom.closeTrendModalBtn.addEventListener('click', () => this.closeTelemetryTrendModal());
+    }
+    if (this.dom.telemetryTrendModal) {
+      this.dom.telemetryTrendModal.addEventListener('click', (e) => {
+        if (e.target === this.dom.telemetryTrendModal) {
+          this.closeTelemetryTrendModal();
+        }
+      });
+    }
+    if (this.dom.cpuTrendTabBtn) {
+      this.dom.cpuTrendTabBtn.addEventListener('click', () => {
+        this.audio.playHudClick(1900);
+        this.trendActiveMetric = 'cpu';
+        this._updateTrendTabsUi();
+        this._updateTrendStatsUi();
+        this.renderTrendCanvas();
+      });
+    }
+    if (this.dom.ramTrendTabBtn) {
+      this.dom.ramTrendTabBtn.addEventListener('click', () => {
+        this.audio.playHudClick(1900);
+        this.trendActiveMetric = 'ram';
+        this._updateTrendTabsUi();
+        this._updateTrendStatsUi();
+        this.renderTrendCanvas();
+      });
+    }
+    if (this.dom.gpuTrendTabBtn) {
+      this.dom.gpuTrendTabBtn.addEventListener('click', () => {
+        this.audio.playHudClick(1900);
+        this.trendActiveMetric = 'gpu';
+        this._updateTrendTabsUi();
+        this._updateTrendStatsUi();
+        this.renderTrendCanvas();
+      });
+    }
+    if (this.dom.gpuMemTrendTabBtn) {
+      this.dom.gpuMemTrendTabBtn.addEventListener('click', () => {
+        this.audio.playHudClick(1900);
+        this.trendActiveMetric = 'gpuMem';
+        this._updateTrendTabsUi();
+        this._updateTrendStatsUi();
+        this.renderTrendCanvas();
+      });
+    }
+
+    document.querySelectorAll('.range-tab-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const mins = Number(btn.getAttribute('data-minutes'));
+        if (mins && [5, 10, 30, 60].includes(mins)) {
+          this.audio.playHudClick(1750);
+          this.trendActiveMinutes = mins;
+          this._updateTrendTabsUi();
+          this.fetchAndRenderTrend();
+        }
+      });
+    });
+
+    if (this.dom.refreshTrendBtn) {
+      this.dom.refreshTrendBtn.addEventListener('click', () => {
+        this.audio.playHudClick(1850);
+        this.fetchAndRenderTrend();
+      });
+    }
+
+    if (this.dom.telemetryTrendCanvas) {
+      const canvas = this.dom.telemetryTrendCanvas;
+      canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const padLeft = 40;
+        const padRight = 20;
+        const plotWidth = rect.width - padLeft - padRight;
+        if (mouseX < padLeft || mouseX > padLeft + plotWidth) {
+          this.trendHoverIndex = -1;
+          if (this.dom.trendCrosshairTooltip) this.dom.trendCrosshairTooltip.classList.add('hidden');
+          this.renderTrendCanvas();
+          return;
+        }
+        const points = this.trendData?.points || [];
+        if (points.length < 2) return;
+
+        const frac = Math.max(0, Math.min(1, (mouseX - padLeft) / plotWidth));
+        const minTime = points[0].timestamp;
+        const maxTime = points[points.length - 1].timestamp;
+        const targetTime = minTime + frac * (maxTime - minTime);
+
+        let closestIdx = 0;
+        let closestDiff = Infinity;
+        for (let i = 0; i < points.length; i++) {
+          const diff = Math.abs(points[i].timestamp - targetTime);
+          if (diff < closestDiff) {
+            closestDiff = diff;
+            closestIdx = i;
+          }
+        }
+        this.trendHoverIndex = closestIdx;
+        const p = points[closestIdx];
+        const metricLabels = {
+          cpu: 'CPU LOAD',
+          ram: 'RAM ALLOCATION',
+          gpu: 'GPU LOAD',
+          gpuMem: 'GPU VRAM'
+        };
+        let val = 0;
+        if (this.trendActiveMetric === 'cpu') val = typeof p.cpu === 'number' ? p.cpu : 0;
+        else if (this.trendActiveMetric === 'ram') val = typeof p.ram === 'number' ? p.ram : 0;
+        else if (this.trendActiveMetric === 'gpu') val = typeof p.gpu === 'number' ? p.gpu : 0;
+        else if (this.trendActiveMetric === 'gpuMem') val = typeof p.gpuMemoryPercent === 'number' ? p.gpuMemoryPercent : 0;
+
+        const timeStr = new Date(p.timestamp).toLocaleTimeString('zh-TW', { hour12: false });
+        if (this.dom.trendCrosshairTooltip) {
+          this.dom.trendCrosshairTooltip.classList.remove('hidden');
+          const label = metricLabels[this.trendActiveMetric] || 'METRIC';
+          this.dom.trendCrosshairTooltip.textContent = `${label}: ${val}% • ${timeStr}`;
+        }
+        this.renderTrendCanvas();
+      });
+
+      canvas.addEventListener('mouseleave', () => {
+        this.trendHoverIndex = -1;
+        if (this.dom.trendCrosshairTooltip) this.dom.trendCrosshairTooltip.classList.add('hidden');
+        this.renderTrendCanvas();
+      });
+    }
 
     // Optic Vision Scanner (Screen Capture)
     if (this.dom.scanScreenBtn) {
@@ -1172,6 +1342,20 @@ class JarvisHudController {
 
     this.dom.memLoadText.textContent = `${t.memoryUsedGb} / ${t.memoryTotalGb} GB (${t.memoryUsagePercent}%)`;
     this.dom.memLoadBar.style.width = `${t.memoryUsagePercent}%`;
+
+    if (Array.isArray(t.disks) && t.disks.length > 0 && this.dom.diskLoadText && this.dom.diskLoadBar) {
+      const primaryDisk = t.disks[0];
+      this.dom.diskLoadText.textContent = `${primaryDisk.drive} ${primaryDisk.usedGb} / ${primaryDisk.totalGb} GB (${primaryDisk.usagePercent}%)`;
+      this.dom.diskLoadBar.style.width = `${primaryDisk.usagePercent}%`;
+      if (primaryDisk.usagePercent >= 90) {
+        this.dom.diskLoadBar.className = 'metric-bar-fill red';
+      } else if (primaryDisk.usagePercent >= 75) {
+        this.dom.diskLoadBar.className = 'metric-bar-fill amber';
+      } else {
+        this.dom.diskLoadBar.className = 'metric-bar-fill cyan';
+      }
+    }
+
     this.dom.cpuModelText.textContent = t.cpuModel;
     this.dom.hostnameText.textContent = t.hostname;
     this.dom.hostPlatformBadge.textContent = t.platform;
@@ -1668,6 +1852,291 @@ class JarvisHudController {
       });
 
       this.dom.cmdPaletteList.appendChild(row);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Holographic Telemetry Trend Analyzer (5, 10, 30, 60 Mins)
+  // ---------------------------------------------------------------------------
+
+  openTelemetryTrendModal(metric = 'cpu') {
+    if (!this.dom.telemetryTrendModal) return;
+    this.audio.playHudClick(2100);
+    this.trendActiveMetric = metric;
+    this._updateTrendTabsUi();
+    this.dom.telemetryTrendModal.classList.remove('hidden');
+    this.fetchAndRenderTrend();
+
+    if (this.trendRefreshTimer) {
+      clearInterval(this.trendRefreshTimer);
+    }
+    this.trendRefreshTimer = setInterval(() => {
+      this.fetchAndRenderTrend(true);
+    }, 3000);
+  }
+
+  closeTelemetryTrendModal() {
+    if (!this.dom.telemetryTrendModal) return;
+    this.audio.playHudClick(1400);
+    this.dom.telemetryTrendModal.classList.add('hidden');
+    if (this.trendRefreshTimer) {
+      clearInterval(this.trendRefreshTimer);
+      this.trendRefreshTimer = null;
+    }
+  }
+
+  async fetchAndRenderTrend(isSilent = false) {
+    try {
+      const res = await fetch(`/api/telemetry/history?minutes=${this.trendActiveMinutes}`);
+      if (!res.ok) return;
+      this.trendData = await res.json();
+      this._updateTrendStatsUi();
+      this.renderTrendCanvas();
+    } catch (err) {
+      if (!isSilent) console.warn('[J.A.R.V.I.S. TREND]', err.message);
+    }
+  }
+
+  _updateTrendTabsUi() {
+    const metricLabels = {
+      cpu: 'CPU LOAD',
+      ram: 'RAM ALLOCATION',
+      gpu: 'GPU LOAD',
+      gpuMem: 'GPU VRAM'
+    };
+    if (this.dom.trendTargetBadge) {
+      this.dom.trendTargetBadge.textContent = metricLabels[this.trendActiveMetric] || 'CPU LOAD';
+    }
+    if (this.dom.cpuTrendTabBtn) {
+      this.dom.cpuTrendTabBtn.classList.toggle('active', this.trendActiveMetric === 'cpu');
+    }
+    if (this.dom.ramTrendTabBtn) {
+      this.dom.ramTrendTabBtn.classList.toggle('active', this.trendActiveMetric === 'ram');
+    }
+    if (this.dom.gpuTrendTabBtn) {
+      this.dom.gpuTrendTabBtn.classList.toggle('active', this.trendActiveMetric === 'gpu');
+    }
+    if (this.dom.gpuMemTrendTabBtn) {
+      this.dom.gpuMemTrendTabBtn.classList.toggle('active', this.trendActiveMetric === 'gpuMem');
+    }
+    document.querySelectorAll('.range-tab-btn').forEach((btn) => {
+      const mins = Number(btn.getAttribute('data-minutes'));
+      btn.classList.toggle('active', mins === this.trendActiveMinutes);
+    });
+  }
+
+  _updateTrendStatsUi() {
+    let sum = null;
+    if (this.trendActiveMetric === 'cpu') sum = this.trendData?.summary?.cpu;
+    else if (this.trendActiveMetric === 'ram') sum = this.trendData?.summary?.ram;
+    else if (this.trendActiveMetric === 'gpu') sum = this.trendData?.summary?.gpu;
+    else if (this.trendActiveMetric === 'gpuMem') sum = this.trendData?.summary?.gpuMem;
+
+    if (!sum || sum.available === false) {
+      if (this.dom.trendStatCurrent) this.dom.trendStatCurrent.textContent = '--%';
+      if (this.dom.trendStatPeak) this.dom.trendStatPeak.textContent = '--%';
+      if (this.dom.trendStatAvg) this.dom.trendStatAvg.textContent = '--%';
+      if (this.dom.trendStatMin) this.dom.trendStatMin.textContent = '--%';
+      return;
+    }
+
+    if (this.dom.trendStatCurrent) this.dom.trendStatCurrent.textContent = `${sum.current}%`;
+    if (this.dom.trendStatPeak) this.dom.trendStatPeak.textContent = `${sum.max}%`;
+    if (this.dom.trendStatAvg) this.dom.trendStatAvg.textContent = `${sum.avg}%`;
+    if (this.dom.trendStatMin) this.dom.trendStatMin.textContent = `${sum.min}%`;
+  }
+
+  renderTrendCanvas() {
+    const canvas = this.dom.telemetryTrendCanvas;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const width = rect.width || 700;
+    const height = rect.height || 240;
+
+    if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+    }
+    ctx.resetTransform();
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, width, height);
+
+    const padLeft = 40;
+    const padRight = 20;
+    const padTop = 20;
+    const padBottom = 26;
+    const plotWidth = width - padLeft - padRight;
+    const plotHeight = height - padTop - padBottom;
+
+    // 1. Horizontal grid lines (0%, 25%, 50%, 75%, 100%)
+    const gridSteps = [0, 25, 50, 75, 100];
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.font = '10px monospace';
+
+    for (const pct of gridSteps) {
+      const y = padTop + plotHeight - (pct / 100) * plotHeight;
+      ctx.strokeStyle = pct === 0 ? 'rgba(0, 240, 255, 0.4)' : 'rgba(0, 240, 255, 0.1)';
+      ctx.lineWidth = pct === 0 ? 1.5 : 1;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(padLeft, y);
+      ctx.lineTo(padLeft + plotWidth, y);
+      ctx.stroke();
+
+      ctx.fillStyle = pct === 100 ? '#ff4d6a' : 'rgba(164, 198, 228, 0.7)';
+      ctx.fillText(`${pct}%`, padLeft - 6, y);
+    }
+
+    // 2. Alert threshold dashed line at 90%
+    const y90 = padTop + plotHeight - (90 / 100) * plotHeight;
+    ctx.strokeStyle = 'rgba(255, 77, 106, 0.55)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(padLeft, y90);
+    ctx.lineTo(padLeft + plotWidth, y90);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = 'rgba(255, 77, 106, 0.85)';
+    ctx.textAlign = 'left';
+    ctx.font = '9px monospace';
+    ctx.fillText('CRITICAL THRESHOLD (90%)', padLeft + 6, y90 - 7);
+
+    // 3. Extract points for selected metric
+    const points = this.trendData?.points || [];
+    if (points.length < 2) {
+      ctx.fillStyle = 'rgba(0, 240, 255, 0.5)';
+      ctx.textAlign = 'center';
+      ctx.font = '12px monospace';
+      ctx.fillText('GATHERING TELEMETRY VECTORS...', width / 2, height / 2);
+      return;
+    }
+
+    const metricConfigs = {
+      cpu: { label: 'CPU LOAD', color: '#00f0ff', fill: 'rgba(0, 240, 255, 0.16)' },
+      ram: { label: 'RAM ALLOCATION', color: '#00ff9d', fill: 'rgba(0, 255, 157, 0.16)' },
+      gpu: { label: 'GPU LOAD', color: '#ffaa00', fill: 'rgba(255, 170, 0, 0.16)' },
+      gpuMem: { label: 'GPU VRAM', color: '#c084fc', fill: 'rgba(192, 132, 252, 0.16)' }
+    };
+    const activeCfg = metricConfigs[this.trendActiveMetric] || metricConfigs.cpu;
+    const mainColor = activeCfg.color;
+    const fillColor = activeCfg.fill;
+
+    // Check if GPU telemetry is unavailable for GPU/VRAM metrics
+    const isGpuMetric = this.trendActiveMetric === 'gpu' || this.trendActiveMetric === 'gpuMem';
+    const gpuSummary = isGpuMetric ? this.trendData?.summary?.[this.trendActiveMetric] : null;
+    if (isGpuMetric && gpuSummary && gpuSummary.available === false) {
+      ctx.fillStyle = 'rgba(255, 170, 0, 0.65)';
+      ctx.textAlign = 'center';
+      ctx.font = '12px monospace';
+      ctx.fillText('NO HARDWARE ACCELERATOR (GPU) DETECTED ON HOST', width / 2, height / 2);
+      return;
+    }
+
+    const minTime = points[0].timestamp;
+    const maxTime = points[points.length - 1].timestamp;
+    const timeSpan = Math.max(1, maxTime - minTime);
+
+    const coords = points.map((p) => {
+      let val = 0;
+      if (this.trendActiveMetric === 'cpu') val = typeof p.cpu === 'number' ? p.cpu : 0;
+      else if (this.trendActiveMetric === 'ram') val = typeof p.ram === 'number' ? p.ram : 0;
+      else if (this.trendActiveMetric === 'gpu') val = typeof p.gpu === 'number' ? p.gpu : 0;
+      else if (this.trendActiveMetric === 'gpuMem') val = typeof p.gpuMemoryPercent === 'number' ? p.gpuMemoryPercent : 0;
+
+      const x = padLeft + ((p.timestamp - minTime) / timeSpan) * plotWidth;
+      const y = padTop + plotHeight - (Math.max(0, Math.min(100, val)) / 100) * plotHeight;
+      return { x, y, val, timestamp: p.timestamp };
+    });
+
+    // 4. Area fill gradient under curve
+    const areaGradient = ctx.createLinearGradient(0, padTop, 0, padTop + plotHeight);
+    areaGradient.addColorStop(0, fillColor);
+    areaGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+    ctx.fillStyle = areaGradient;
+    ctx.beginPath();
+    ctx.moveTo(coords[0].x, padTop + plotHeight);
+    for (const c of coords) {
+      ctx.lineTo(c.x, c.y);
+    }
+    ctx.lineTo(coords[coords.length - 1].x, padTop + plotHeight);
+    ctx.closePath();
+    ctx.fill();
+
+    // 5. Draw neon trend polyline
+    ctx.strokeStyle = mainColor;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = mainColor;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.moveTo(coords[0].x, coords[0].y);
+    for (let i = 1; i < coords.length; i++) {
+      ctx.lineTo(coords[i].x, coords[i].y);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // 6. Current latest pulse dot
+    const latest = coords[coords.length - 1];
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(latest.x, latest.y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = mainColor;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(latest.x, latest.y, 6, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 7. Time axis ticks (-Xm ... NOW)
+    ctx.fillStyle = 'rgba(164, 198, 228, 0.65)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.font = '9px monospace';
+    const numTicks = 5;
+    for (let i = 0; i <= numTicks; i++) {
+      const frac = i / numTicks;
+      const t = minTime + frac * timeSpan;
+      const x = padLeft + frac * plotWidth;
+      const minsAgo = Math.round((maxTime - t) / 60000);
+      const label = minsAgo === 0 ? 'NOW' : `-${minsAgo}M`;
+      ctx.fillText(label, x, padTop + plotHeight + 6);
+    }
+
+    // 8. Hover crosshair
+    if (this.trendHoverIndex >= 0 && this.trendHoverIndex < coords.length) {
+      const hoverCoord = coords[this.trendHoverIndex];
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+
+      ctx.beginPath();
+      ctx.moveTo(hoverCoord.x, padTop);
+      ctx.lineTo(hoverCoord.x, padTop + plotHeight);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(padLeft, hoverCoord.y);
+      ctx.lineTo(padLeft + plotWidth, hoverCoord.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(hoverCoord.x, hoverCoord.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = mainColor;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(hoverCoord.x, hoverCoord.y, 7, 0, Math.PI * 2);
+      ctx.stroke();
     }
   }
 

@@ -4,7 +4,8 @@ import {
   buildJarvisSystemPrompt,
   sanitizeForSpeech,
   generateDiagnosticFallbackReply,
-  ensureTraditionalChinese
+  ensureTraditionalChinese,
+  streamJarvisResponse
 } from '../src/server/services/llmService.js';
 
 describe('J.A.R.V.I.S. LLM Service', () => {
@@ -59,5 +60,26 @@ describe('J.A.R.V.I.S. LLM Service', () => {
     const raw = '全息图现在展示了太阳系，包括卫星和轨道。';
     const clean = ensureTraditionalChinese(raw, 'zh-TW');
     assert.equal(clean, '全息圖現在展示了太陽系，包括衛星和軌道。');
+  });
+
+  it('handles streamJarvisResponse for time inquiry without throwing ReferenceError', async () => {
+    const events = [];
+    await streamJarvisResponse(
+      {
+        provider: 'ollama',
+        model: 'qwen2.5:7b',
+        messages: [{ role: 'user', content: 'What time is it?' }],
+        baseUrl: 'http://127.0.0.1:99999' // mock offline endpoint
+      },
+      (evt) => events.push(evt)
+    );
+
+    assert.ok(events.length >= 2);
+    const meta = events.find((e) => e.type === 'meta');
+    assert.ok(meta);
+    assert.equal(meta.webSkill?.skill, 'current_time');
+    assert.equal(meta.webSkill?.executed, true);
+    const done = events.find((e) => e.type === 'done');
+    assert.ok(done);
   });
 });

@@ -207,9 +207,9 @@
               <span id="hostPlatformBadge" class="section-badge">HOST</span>
             </div>
 
-            <div class="metric-row">
+            <div id="cpuMetricRow" class="metric-row clickable-telemetry" title="點擊查看 CPU 負載歷史趨勢 (5 / 10 / 30 / 60 分鐘)">
               <div class="metric-head">
-                <span>CPU NEURAL LOAD</span>
+                <span>CPU NEURAL LOAD <span class="trend-badge">📈 5-60M</span></span>
                 <strong id="cpuLoadText">--%</strong>
               </div>
               <div class="metric-bar-track">
@@ -217,9 +217,9 @@
               </div>
             </div>
 
-            <div id="gpuNeuralRow" class="metric-row hidden">
+            <div id="gpuNeuralRow" class="metric-row hidden clickable-telemetry" title="點擊查看 GPU 負載歷史趨勢 (5 / 10 / 30 / 60 分鐘)">
               <div class="metric-head">
-                <span>GPU NEURAL LOAD</span>
+                <span>GPU NEURAL LOAD <span class="trend-badge">📈 5-60M</span></span>
                 <strong id="gpuLoadText">--%</strong>
               </div>
               <div class="metric-bar-track">
@@ -227,9 +227,9 @@
               </div>
             </div>
 
-            <div id="gpuMetricRow" class="metric-row hidden">
+            <div id="gpuMetricRow" class="metric-row hidden clickable-telemetry" title="點擊查看 GPU 記憶體 (VRAM) 歷史趨勢 (5 / 10 / 30 / 60 分鐘)">
               <div class="metric-head">
-                <span>GPU MEMORY ALLOCATION</span>
+                <span>GPU MEMORY ALLOCATION <span class="trend-badge">📈 5-60M</span></span>
                 <strong id="gpuMemLoadText">-- / -- GB</strong>
               </div>
               <div class="metric-bar-track">
@@ -237,13 +237,23 @@
               </div>
             </div>
 
-            <div class="metric-row">
+            <div id="memMetricRow" class="metric-row clickable-telemetry" title="點擊查看記憶體 (RAM) 歷史趨勢 (5 / 10 / 30 / 60 分鐘)">
               <div class="metric-head">
-                <span>MEMORY ALLOCATION</span>
+                <span>MEMORY ALLOCATION <span class="trend-badge">📈 5-60M</span></span>
                 <strong id="memLoadText">-- / -- GB</strong>
               </div>
               <div class="metric-bar-track">
                 <div id="memLoadBar" class="metric-bar-fill" style="width: 40%"></div>
+              </div>
+            </div>
+
+            <div id="diskMetricRow" class="metric-row">
+              <div class="metric-head">
+                <span>DISK STORAGE ALLOCATION</span>
+                <strong id="diskLoadText">-- / -- GB</strong>
+              </div>
+              <div class="metric-bar-track">
+                <div id="diskLoadBar" class="metric-bar-fill cyan" style="width: 0%"></div>
               </div>
             </div>
 
@@ -728,6 +738,63 @@
           autocomplete="off"
         />
         <div id="cmdPaletteList" class="cmd-palette-list"></div>
+      </div>
+    </div>
+
+    <!-- HOLOGRAPHIC TELEMETRY TREND ANALYZER (5, 10, 30, 60 MINS) -->
+    <div id="telemetryTrendModal" class="telemetry-modal-backdrop hidden" role="dialog" aria-modal="true">
+      <div class="telemetry-modal">
+        <div class="telemetry-modal-header">
+          <div class="modal-title-cluster" style="display: flex; align-items: center; gap: 8px">
+            <span>📈 STARK TELEMETRY ANALYZER // NEURAL WORKLOAD TRENDS</span>
+            <span id="trendTargetBadge" class="section-badge">CPU LOAD</span>
+          </div>
+          <button id="closeTrendModalBtn" type="button" class="msg-replay-btn" title="Close [ESC]">[ESC]</button>
+        </div>
+
+        <div class="trend-controls-bar">
+          <div class="trend-metric-tabs">
+            <button id="cpuTrendTabBtn" type="button" class="trend-tab-btn active" data-metric="cpu">CPU LOAD</button>
+            <button id="ramTrendTabBtn" type="button" class="trend-tab-btn" data-metric="ram">RAM ALLOCATION</button>
+            <button id="gpuTrendTabBtn" type="button" class="trend-tab-btn" data-metric="gpu">GPU LOAD</button>
+            <button id="gpuMemTrendTabBtn" type="button" class="trend-tab-btn" data-metric="gpuMem">GPU VRAM</button>
+          </div>
+          <div class="trend-range-tabs">
+            <button type="button" class="range-tab-btn" data-minutes="5">5 MIN</button>
+            <button type="button" class="range-tab-btn" data-minutes="10">10 MIN</button>
+            <button type="button" class="range-tab-btn active" data-minutes="30">30 MIN</button>
+            <button type="button" class="range-tab-btn" data-minutes="60">60 MIN</button>
+          </div>
+        </div>
+
+        <div class="trend-stats-bar">
+          <div class="trend-stat-card">
+            <span class="stat-label">CURRENT</span>
+            <strong id="trendStatCurrent" class="stat-value">--%</strong>
+          </div>
+          <div class="trend-stat-card">
+            <span class="stat-label">PEAK LOAD</span>
+            <strong id="trendStatPeak" class="stat-value red">--%</strong>
+          </div>
+          <div class="trend-stat-card">
+            <span class="stat-label">AVERAGE</span>
+            <strong id="trendStatAvg" class="stat-value cyan">--%</strong>
+          </div>
+          <div class="trend-stat-card">
+            <span class="stat-label">MINIMUM</span>
+            <strong id="trendStatMin" class="stat-value emerald">--%</strong>
+          </div>
+        </div>
+
+        <div class="trend-canvas-container">
+          <canvas id="telemetryTrendCanvas" width="700" height="240"></canvas>
+          <div id="trendCrosshairTooltip" class="trend-tooltip hidden"></div>
+        </div>
+
+        <div class="trend-modal-footer">
+          <span id="trendFooterTelemetry">SAMPLING INTERVAL: 5s &bull; BUFFER: 720 NODES &bull; LIVE SYNCHRONIZED</span>
+          <button id="refreshTrendBtn" type="button" class="hud-btn secondary" style="padding: 4px 10px; font-size: 0.68rem">⟳ REFRESH</button>
+        </div>
       </div>
     </div>
 

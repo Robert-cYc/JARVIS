@@ -40,9 +40,11 @@
 - **多模態視覺感知與本地檔案分析 (`Optic Vision Scanner & File Analyzer`)**
   - **螢幕截圖掃描 (`🖥️ SCREEN`)** 與 **鏡頭快照 (`📷 CAM`)**：一鍵擷取當前螢幕視窗或 Webcam 畫面，交由多模態模型（如 Ollama `llava` / `llama3.2-vision`、Gemini、GPT-4o、Claude）進行視覺診斷。
   - **拖曳檔案與程式碼分析 (`📂 FILE`)**：支援點擊上傳或直接將 `.js`、`.py`、`.ts`、`.json`、`.log`、`.md`、`.csv` 與圖片拖曳至中央通訊視窗進行分析。
-- **即時裝甲與主機遙測 (Real-Time Telemetry)**
+- **即時裝甲與主機遙測、GPU 監控與趨勢分析儀 (Real-Time Telemetry & Hardware Sentinel)**
   - 動態 HTML5 Canvas **方舟反應爐（Arc Reactor）**，隨 J.A.R.V.I.S. 說話頻率與系統狀態（待命、思考中、發聲中、聆聽中）即時改變色溫與聲波振幅。
-  - 即時監控主機 CPU 核心負載、記憶體配置與系統運行狀態。
+  - 即時監控主機 CPU 核心負載、記憶體配置、NVIDIA GPU 負載/溫度/VRAM、**磁碟儲存空間分配 (Disk Storage)** 與系統運行狀態。
+  - **點擊開啟 5 / 10 / 30 / 60 分鐘歷史負載趨勢圖 (Neural Load Trend Analyzer)**：點擊 HUD 中 CPU 負載、記憶體配置 (RAM)、GPU 負載或 GPU VRAM 列即可呼叫全息趨勢分析視窗，支援四項指標即時統計（當前/尖峰/均值/最低）、專屬主題發光軌跡（青/綠/橘/紫）與游標十字準心即時數值探測。
+  - **自主硬體與磁碟守護排程 (`hardwareSentinel`)**：背景週期巡檢，當 CPU 負載超載（>90%）、RAM 容量耗盡（>90%）或磁碟剩餘空間過低（<10 GB）時，自動觸發冷卻保護語音警告與 HUD 警報。
 - **零外部套件依賴 (Zero-Dependency Native Node.js ESM)**
   - 後端與測試完全基於 Node.js 原生模組（`node:http`、`node:fs`、`node:os`、`node:test`）建構，不產生龐大的 `node_modules`，啟動迅速且相容雲端同步資料夾。
 

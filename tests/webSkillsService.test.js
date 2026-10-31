@@ -9,7 +9,8 @@ import {
   describeAqiLevel,
   detectTimerCommand,
   detectWebSkillIntent,
-  detectLauncherCommand
+  detectLauncherCommand,
+  executeWebSkillForMessage
 } from '../src/server/services/webSkillsService.js';
 
 describe('J.A.R.V.I.S. Web Skills & News Service', () => {
@@ -107,6 +108,12 @@ describe('J.A.R.V.I.S. Web Skills & News Service', () => {
     const sandboxIntent = detectWebSkillIntent('幫我算 sha256: STARK');
     assert.equal(sandboxIntent.intent, 'sandbox_calc');
 
+    const timeIntentZh = detectWebSkillIntent('JARVIS，現在幾點了？');
+    assert.equal(timeIntentZh.intent, 'time');
+
+    const timeIntentEn = detectWebSkillIntent('JARVIS, what time is it?');
+    assert.equal(timeIntentEn.intent, 'time');
+
     const forceSearch = detectWebSkillIntent('Hello JARVIS', true);
     assert.equal(forceSearch.intent, 'search');
   });
@@ -197,5 +204,15 @@ describe('J.A.R.V.I.S. Web Skills & News Service', () => {
     const timerEn = detectTimerCommand('JARVIS, set a timer for 90 seconds');
     assert.ok(timerEn);
     assert.equal(timerEn.durationSeconds, 90);
+  });
+
+  it('executes current time chronometer skill accurately', async () => {
+    const res = await executeWebSkillForMessage('JARVIS，現在幾點幾分？');
+    assert.equal(res.executed, true);
+    assert.equal(res.skill, 'current_time');
+    assert.ok(res.items.length > 0);
+    assert.ok(res.contextBlock.includes('SYSTEM CHRONOMETER'));
+    assert.ok(res.contextBlock.includes('當前時間'));
+    assert.ok(res.contextBlock.includes(res.items[0].time));
   });
 });

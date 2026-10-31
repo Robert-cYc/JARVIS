@@ -366,6 +366,14 @@ export async function bootJarvisSystem(rawArgv = process.argv.slice(2)) {
   process.once('SIGINT', () => shutdown('SIGINT'));
   process.once('SIGTERM', () => shutdown('SIGTERM'));
 
+  process.on('uncaughtException', (err) => {
+    if (err && (err.code === 'ERR_HTTP_HEADERS_SENT' || err.code === 'ECONNRESET' || err.code === 'EPIPE')) {
+      console.warn(`[J.A.R.V.I.S. NETWORK] Transient connection reset suppressed: ${err.message}`);
+      return;
+    }
+    console.error('[J.A.R.V.I.S. UNCAUGHT EXCEPTION]', err);
+  });
+
   return { server, port: activePort, url: hudUrl };
 }
 
