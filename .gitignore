@@ -1,6 +1,7 @@
 node_modules/
 data/
 reports/
+ipScanner/
 .env
 .env.local
 .DS_Store
