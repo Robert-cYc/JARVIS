@@ -1,5 +1,5 @@
 import { JarvisAudioEngine } from './audioEngine.js';
-import { ArcReactorVisualizer } from './hudVisualizer.js';
+import { ArcReactorVisualizer, HoloBackgroundVisualizer } from './hudVisualizer.js';
 import { JarvisSpeechInput } from './speechInput.js';
 
 const STORAGE_KEY = 'stark_jarvis_hud_config_v2';
@@ -218,6 +218,12 @@ class JarvisHudController {
       () => this.audio.sampleEnergy()
     );
     this.visualizer.start();
+
+    const holoBgCanvas = document.getElementById('holoBgCanvas');
+    if (holoBgCanvas) {
+      this.holoBgVisualizer = new HoloBackgroundVisualizer(holoBgCanvas);
+      this.holoBgVisualizer.start();
+    }
 
     this.audio.onSpeakingStateChange = (speaking) => {
       if (speaking) {
@@ -450,6 +456,9 @@ class JarvisHudController {
     }
     if (this.visualizer) {
       this.visualizer.setTheme(themeName);
+    }
+    if (this.holoBgVisualizer) {
+      this.holoBgVisualizer.setTheme(themeName);
     }
   }
 

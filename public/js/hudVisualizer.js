@@ -275,3 +275,153 @@ export class ArcReactorVisualizer {
     ctx.fill();
   }
 }
+
+/**
+ * Renders an ambient holographic quantum constellation & floating cyber particles on a full-screen canvas.
+ */
+export class HoloBackgroundVisualizer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas ? canvas.getContext('2d') : null;
+    this.theme = 'mark85';
+    this.particles = [];
+    this.maxParticles = 38;
+    this.animationFrameId = null;
+    this.mouseX = -1000;
+    this.mouseY = -1000;
+    this._resizeHandler = () => this._resize();
+  }
+
+  setTheme(themeName) {
+    this.theme = themeName || 'mark85';
+  }
+
+  start() {
+    if (!this.canvas || !this.ctx) return;
+    this._resize();
+    window.addEventListener('resize', this._resizeHandler);
+    window.addEventListener(
+      'mousemove',
+      (e) => {
+        this.mouseX = e.clientX;
+        this.mouseY = e.clientY;
+      },
+      { passive: true }
+    );
+
+    this._initParticles();
+
+    const loop = () => {
+      if (!document.hidden) {
+        this._draw();
+      }
+      this.animationFrameId = requestAnimationFrame(loop);
+    };
+    this.animationFrameId = requestAnimationFrame(loop);
+  }
+
+  stop() {
+    if (this.animationFrameId) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+    window.removeEventListener('resize', this._resizeHandler);
+  }
+
+  _resize() {
+    if (!this.canvas) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.width = window.innerWidth;
+    this.height = window.innerHeight;
+    this.canvas.width = this.width * dpr;
+    this.canvas.height = this.height * dpr;
+    this.canvas.style.width = `${this.width}px`;
+    this.canvas.style.height = `${this.height}px`;
+    this.ctx.scale(dpr, dpr);
+  }
+
+  _initParticles() {
+    this.particles = [];
+    for (let i = 0; i < this.maxParticles; i++) {
+      this.particles.push({
+        x: Math.random() * (this.width || window.innerWidth),
+        y: Math.random() * (this.height || window.innerHeight),
+        vx: (Math.random() - 0.5) * 0.4,
+        vy: (Math.random() - 0.5) * 0.4,
+        size: Math.random() * 1.8 + 0.8,
+        alpha: Math.random() * 0.5 + 0.2,
+        pulseSpeed: Math.random() * 0.02 + 0.01,
+        pulsePhase: Math.random() * Math.PI * 2
+      });
+    }
+  }
+
+  _getThemeColor() {
+    if (this.theme === 'hulkbuster') return { r: 255, g: 59, b: 48 };
+    if (this.theme === 'stealth') return { r: 0, g: 255, b: 136 };
+    if (this.theme === 'warmachine') return { r: 160, g: 205, b: 255 };
+    return { r: 0, g: 240, b: 255 }; // Stark Cyan
+  }
+
+  _draw() {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    ctx.clearRect(0, 0, this.width, this.height);
+
+    const rgb = this._getThemeColor();
+    const count = this.particles.length;
+
+    // 1. Draw connecting constellation lines
+    for (let i = 0; i < count; i++) {
+      const p1 = this.particles[i];
+      for (let j = i + 1; j < count; j++) {
+        const p2 = this.particles[j];
+        const dx = p1.x - p2.x;
+        const dy = p1.y - p2.y;
+        const distSq = dx * dx + dy * dy;
+        if (distSq < 13000) {
+          const dist = Math.sqrt(distSq);
+          const lineAlpha = (1 - dist / 114) * 0.16;
+          ctx.strokeStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${lineAlpha})`;
+          ctx.lineWidth = 0.8;
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // 2. Draw & update particles
+    for (let i = 0; i < count; i++) {
+      const p = this.particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.pulsePhase += p.pulseSpeed;
+
+      // Wrap around edges
+      if (p.x < 0) p.x = this.width;
+      else if (p.x > this.width) p.x = 0;
+      if (p.y < 0) p.y = this.height;
+      else if (p.y > this.height) p.y = 0;
+
+      // Subtle mouse interaction
+      const mdx = this.mouseX - p.x;
+      const mdy = this.mouseY - p.y;
+      const mDistSq = mdx * mdx + mdy * mdy;
+      let extraAlpha = 0;
+      if (mDistSq < 16000) {
+        extraAlpha = (1 - Math.sqrt(mDistSq) / 126) * 0.35;
+      }
+
+      const currentAlpha = Math.min(1, p.alpha + Math.sin(p.pulsePhase) * 0.15 + extraAlpha);
+      ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${currentAlpha})`;
+      ctx.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${currentAlpha * 0.8})`;
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+  }
+}

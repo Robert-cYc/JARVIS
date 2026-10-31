@@ -13,6 +13,10 @@
     <link rel="stylesheet" href="/css/hud.css" />
   </head>
   <body>
+    <!-- GLOBAL HOLOGRAPHIC SCANNER & BACKGROUND AMBIENT CANVAS -->
+    <div class="global-hologram-scanner"></div>
+    <canvas id="holoBgCanvas" class="holo-bg-canvas"></canvas>
+
     <div class="hud-shell">
       <!-- TOP TELEMETRY BAR -->
       <header class="hud-header">
@@ -339,6 +343,35 @@
         <section class="hud-center">
           <!-- ARC REACTOR CORE -->
           <div class="reactor-stage">
+            <!-- TACTICAL CORNER RETICLES -->
+            <div class="hud-reticle-corner top-left"></div>
+            <div class="hud-reticle-corner top-right"></div>
+            <div class="hud-reticle-corner bottom-left"></div>
+            <div class="hud-reticle-corner bottom-right"></div>
+
+            <!-- HOLOGRAPHIC LASER SCANNER SWEEP -->
+            <div class="reactor-laser-scanner"></div>
+
+            <!-- CONCENTRIC EXPANDING PULSE RINGS -->
+            <div class="reactor-pulse-ring ring-1"></div>
+            <div class="reactor-pulse-ring ring-2"></div>
+
+            <!-- FLANKING TELEMETRY EQUALIZER WAVES -->
+            <div class="reactor-flank-visualizer flank-left" title="HARMONIC RESONANCE TELEMETRY">
+              <div class="flank-bar" style="--h: 40%; --d: 0.1s"></div>
+              <div class="flank-bar" style="--h: 75%; --d: 0.35s"></div>
+              <div class="flank-bar" style="--h: 30%; --d: 0.2s"></div>
+              <div class="flank-bar" style="--h: 90%; --d: 0.5s"></div>
+              <div class="flank-bar" style="--h: 60%; --d: 0.25s"></div>
+            </div>
+            <div class="reactor-flank-visualizer flank-right" title="HARMONIC RESONANCE TELEMETRY">
+              <div class="flank-bar" style="--h: 65%; --d: 0.2s"></div>
+              <div class="flank-bar" style="--h: 85%; --d: 0.45s"></div>
+              <div class="flank-bar" style="--h: 35%; --d: 0.15s"></div>
+              <div class="flank-bar" style="--h: 95%; --d: 0.3s"></div>
+              <div class="flank-bar" style="--h: 50%; --d: 0.6s"></div>
+            </div>
+
             <div class="reactor-hud-overlay">
               <div>
                 <div>CORE: MARK LXXXV RT-NODE</div>
