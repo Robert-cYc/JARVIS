@@ -1751,10 +1751,13 @@ class JarvisHudController {
       lines.push('_No recorded transmissions in current session._');
     } else {
       for (const msg of this.conversationHistory) {
+        const timeTag = msg.timestamp
+          ? ` [${this._formatDateTime(new Date(msg.timestamp))}]`
+          : '';
         const speaker =
           msg.role === 'user'
-            ? `### 👤 ${this.dom.honorificInput.value || 'Sir'}`
-            : `### 🤖 J.A.R.V.I.S.`;
+            ? `### 👤 ${this.dom.honorificInput.value || 'Sir'}${timeTag}`
+            : `### 🤖 J.A.R.V.I.S.${timeTag}`;
         lines.push(speaker);
         lines.push('');
         lines.push(msg.content);
@@ -2389,6 +2392,17 @@ class JarvisHudController {
     return svg;
   }
 
+  _formatDateTime(date = new Date()) {
+    const d = date instanceof Date ? date : new Date(date);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    return `${y}-${m}-${day} ${hh}:${mm}:${ss}`;
+  }
+
   appendMessage({
     role,
     sender,
@@ -2397,22 +2411,38 @@ class JarvisHudController {
     badge,
     sources = [],
     launchAction = null,
-    skipPersist = false
+    skipPersist = false,
+    timestamp = null
   }) {
     const card = document.createElement('div');
     card.className = `msg-card ${role === 'user' ? 'user' : 'jarvis'}`;
 
+    const msgTime = timestamp ? new Date(timestamp) : new Date();
+    const timeString = this._formatDateTime(msgTime);
+
     const meta = document.createElement('div');
     meta.className = 'msg-meta';
+
+    const leftCluster = document.createElement('div');
+    leftCluster.className = 'msg-meta-left';
 
     const senderEl = document.createElement('span');
     senderEl.className = 'msg-sender';
     senderEl.textContent = sender;
 
-    const badgeEl = document.createElement('span');
-    badgeEl.textContent = badge || new Date().toLocaleTimeString();
+    const timeEl = document.createElement('span');
+    timeEl.className = 'msg-time';
+    timeEl.textContent = timeString;
+    timeEl.title = `Transmission Datetime: ${timeString}`;
 
-    meta.appendChild(senderEl);
+    leftCluster.appendChild(senderEl);
+    leftCluster.appendChild(timeEl);
+
+    const badgeEl = document.createElement('span');
+    badgeEl.className = 'msg-badge';
+    badgeEl.textContent = badge || timeString;
+
+    meta.appendChild(leftCluster);
     meta.appendChild(badgeEl);
 
     const body = document.createElement('div');
@@ -2504,13 +2534,14 @@ class JarvisHudController {
         content,
         speechText,
         badge: badgeEl.textContent,
+        timestamp: msgTime.getTime(),
         sources: Array.isArray(sources) ? sources.slice(0, 6) : [],
         launchAction
       });
       this._saveChatHistory();
     }
 
-    return { card, body, badgeEl };
+    return { card, body, badgeEl, timeEl };
   }
 
   launchSolarSystem() {
@@ -2856,7 +2887,11 @@ class JarvisHudController {
       displayUserText += `\n[👁️ Optic Vision Frame Attached]`;
     }
 
-    this.conversationHistory.push({ role: 'user', content: userText });
+    this.conversationHistory.push({
+      role: 'user',
+      content: userText,
+      timestamp: Date.now()
+    });
 
     this.appendMessage({
       role: 'user',
@@ -2983,7 +3018,8 @@ class JarvisHudController {
 
       this.conversationHistory.push({
         role: 'assistant',
-        content: finalReply
+        content: finalReply,
+        timestamp: Date.now()
       });
 
       const skillBadge = webSkill?.executed

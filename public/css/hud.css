@@ -775,6 +775,37 @@ body.focus-layout .hud-main > .hud-panel {
   letter-spacing: 1px;
 }
 
+.msg-meta-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.msg-time {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: rgba(164, 198, 228, 0.72);
+  letter-spacing: 0.5px;
+  background: rgba(0, 240, 255, 0.06);
+  border: 1px solid rgba(0, 240, 255, 0.16);
+  padding: 1px 6px;
+  border-radius: 2px;
+}
+
+.msg-card.user .msg-time {
+  color: rgba(255, 187, 0, 0.72);
+  background: rgba(255, 187, 0, 0.06);
+  border-color: rgba(255, 187, 0, 0.2);
+}
+
+.msg-badge {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .msg-sender {
   font-family: var(--font-display);
   font-weight: 700;
