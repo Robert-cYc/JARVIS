@@ -2476,11 +2476,12 @@ class JarvisHudController {
     this.appendMessage({
       role: 'assistant',
       sender: 'J.A.R.V.I.S. // TACTICAL RADAR',
-      content: '📡 正在為您啟動 IP Scanner (區域網路雷達)...\n正在主機背景執行 `ipScanner/Autorun.bat` 並連結至 http://localhost:63210。',
+      content: '📡 正在為您啟動 IP Scanner (區域網路雷達)...\n正在主機背景執行 `ipScanner/Autorun.bat` 並開啟 http://localhost:63210。',
       speechText: 'Sir，已為您啟動 IP Scanner 網路雷達系統。',
       badge: 'LAN RADAR'
     });
     this.audio.speak('Sir，已為您啟動 IP Scanner 網路雷達系統。');
+    window.open('http://localhost:63210', '_blank', 'noopener,noreferrer');
     fetch('/api/launch/ip-scanner', { method: 'POST' }).catch((err) => {
       console.warn('[J.A.R.V.I.S.] Failed to launch IP Scanner:', err);
     });

@@ -617,12 +617,12 @@ export function createServer() {
         let launched = false;
         try {
           if (process.platform === 'win32') {
-            const child = spawn('cmd.exe', ['/c', 'start', '', ipScannerBatPath], {
+            const child = spawn('cmd.exe', ['/c', 'start', 'Local Network IP Scanner', 'cmd.exe', '/c', 'Autorun.bat'], {
               cwd: ipScannerDir,
               detached: true,
               stdio: 'ignore'
             });
-            child.on('error', () => {});
+            child.on('error', (err) => console.warn('[J.A.R.V.I.S.] Failed to spawn Autorun.bat:', err.message));
             child.unref();
             launched = true;
           } else if (process.platform === 'darwin') {
@@ -693,7 +693,8 @@ export function createServer() {
       const fileBuffer = await fs.readFile(fullPath);
       const ext = path.extname(fullPath).toLowerCase();
       res.writeHead(200, {
-        'Content-Type': MIME_TYPES[ext] || 'application/octet-stream'
+        'Content-Type': MIME_TYPES[ext] || 'application/octet-stream',
+        'Cache-Control': 'no-cache'
       });
       res.end(fileBuffer);
     } catch (error) {
