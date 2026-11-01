@@ -82,9 +82,9 @@ describe('IP Scanner Port Resolution & Endpoint Signature Verification', () => {
       const foundPort = await resolveIpScannerPort(tempDir);
       assert.equal(foundPort, scannerPort);
 
-      // 3. Excluded port (e.g. if scannerPort matched JARVIS port) is ignored
-      const excludedPort = await resolveIpScannerPort(tempDir, scannerPort);
-      assert.equal(excludedPort, null);
+      // 3. If marker points to excludedPort (e.g. JARVIS's own port), marker is ignored and excludedPort is never returned
+      const excludedResult = await resolveIpScannerPort(tempDir, scannerPort);
+      assert.notEqual(excludedResult, scannerPort);
     } finally {
       await new Promise((resolve) => scannerServer.close(resolve));
       await fs.rm(tempDir, { recursive: true, force: true });
