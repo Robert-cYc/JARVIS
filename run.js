@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { createServer } from './src/server/app.js';
+import { createServer, listenWithPortFallback } from './src/server/app.js';
 import { getOllamaStatus } from './src/server/services/llmService.js';
 import { getVaultState } from './src/server/services/memoryVaultService.js';
 import { startAlertMonitor, stopAlertMonitor, pushAlertEvent } from './src/server/services/alertService.js';
@@ -238,7 +238,7 @@ export function runTestSuite() {
   });
 }
 
-export { listenWithPortFallback } from './src/server/app.js';
+export { listenWithPortFallback };
 
 /**
  * Main unified boot sequence for the J.A.R.V.I.S. Mark LXXXV HUD system.
