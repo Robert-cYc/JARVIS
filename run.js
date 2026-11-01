@@ -238,50 +238,7 @@ export function runTestSuite() {
   });
 }
 
-/**
- * Binds an HTTP server to a preferred port, falling back to subsequent ports if occupied.
- * @param {import('node:http').Server} server
- * @param {number} preferredPort
- * @param {number} [maxAttempts]
- * @returns {Promise<number>}
- */
-export function listenWithPortFallback(server, preferredPort, maxAttempts = 10) {
-  return new Promise((resolve, reject) => {
-    let currentPort = preferredPort;
-    let attempts = 0;
-
-    const tryListen = () => {
-      attempts += 1;
-
-      const onError = (/** @type {NodeJS.ErrnoException} */ err) => {
-        server.removeListener('listening', onListening);
-        if (err.code === 'EADDRINUSE' && attempts < maxAttempts) {
-          console.warn(
-            `[J.A.R.V.I.S. BOOT] Port ${currentPort} is occupied. Re-routing to port ${currentPort + 1}...`
-          );
-          currentPort += 1;
-          tryListen();
-        } else {
-          reject(err);
-        }
-      };
-
-      const onListening = () => {
-        server.removeListener('error', onError);
-        const address = server.address();
-        const boundPort =
-          typeof address === 'object' && address !== null ? address.port : currentPort;
-        resolve(boundPort);
-      };
-
-      server.once('error', onError);
-      server.once('listening', onListening);
-      server.listen(currentPort);
-    };
-
-    tryListen();
-  });
-}
+export { listenWithPortFallback } from './src/server/app.js';
 
 /**
  * Main unified boot sequence for the J.A.R.V.I.S. Mark LXXXV HUD system.

@@ -116,50 +116,55 @@ describe('J.A.R.V.I.S. Automation Core (Briefing, Debrief, Service Sentinel)', (
   });
 
   it('evaluates hardware and disk sentinel health alerts with cooldown', async () => {
-    // 1. Nominal telemetry should produce 0 alerts
-    const nominalTelemetry = {
-      cpuUsagePercent: 35,
-      memoryUsagePercent: 50,
-      memoryFreeGb: 16.0,
-      disks: [
-        { drive: 'C:', freeGb: 80.0, usagePercent: 60 }
-      ]
-    };
+    const tmpHwPath = path.join(os.tmpdir(), `jarvis_test_hw_${Date.now()}.json`);
+    try {
+      // 1. Nominal telemetry should produce 0 alerts
+      const nominalTelemetry = {
+        cpuUsagePercent: 35,
+        memoryUsagePercent: 50,
+        memoryFreeGb: 16.0,
+        disks: [
+          { drive: 'C:', freeGb: 80.0, usagePercent: 60 }
+        ]
+      };
 
-    const alertsNominal = await checkHardwareHealth({
-      filePath: tmpAutoPath,
-      telemetry: nominalTelemetry
-    });
-    assert.equal(alertsNominal.length, 0);
+      const alertsNominal = await checkHardwareHealth({
+        filePath: tmpHwPath,
+        telemetry: nominalTelemetry
+      });
+      assert.equal(alertsNominal.length, 0);
 
-    // 2. High CPU, High RAM, Low Disk telemetry should produce 3 alerts
-    const criticalTelemetry = {
-      cpuUsagePercent: 96,
-      memoryUsagePercent: 93,
-      memoryFreeGb: 1.2,
-      disks: [
-        { drive: 'C:', freeGb: 4.5, usagePercent: 95 }
-      ]
-    };
+      // 2. High CPU, High RAM, Low Disk telemetry should produce 3 alerts
+      const criticalTelemetry = {
+        cpuUsagePercent: 96,
+        memoryUsagePercent: 93,
+        memoryFreeGb: 1.2,
+        disks: [
+          { drive: 'C:', freeGb: 4.5, usagePercent: 95 }
+        ]
+      };
 
-    const alertsCritical = await checkHardwareHealth({
-      filePath: tmpAutoPath,
-      telemetry: criticalTelemetry
-    });
+      const alertsCritical = await checkHardwareHealth({
+        filePath: tmpHwPath,
+        telemetry: criticalTelemetry
+      });
 
-    assert.equal(alertsCritical.length, 3);
-    const metrics = alertsCritical.map((a) => a.metric);
-    assert.ok(metrics.includes('cpu'));
-    assert.ok(metrics.includes('ram'));
-    assert.ok(metrics.includes('disk'));
-    assert.ok(alertsCritical[0].speechText.includes('Sir'));
+      assert.equal(alertsCritical.length, 3);
+      const metrics = alertsCritical.map((a) => a.metric);
+      assert.ok(metrics.includes('cpu'));
+      assert.ok(metrics.includes('ram'));
+      assert.ok(metrics.includes('disk'));
+      assert.ok(alertsCritical[0].speechText.includes('Sir'));
 
-    // 3. Immediately checking again should be silenced by cooldown
-    const alertsDuringCooldown = await checkHardwareHealth({
-      filePath: tmpAutoPath,
-      telemetry: criticalTelemetry
-    });
-    assert.equal(alertsDuringCooldown.length, 0);
+      // 3. Immediately checking again should be silenced by cooldown
+      const alertsDuringCooldown = await checkHardwareHealth({
+        filePath: tmpHwPath,
+        telemetry: criticalTelemetry
+      });
+      assert.equal(alertsDuringCooldown.length, 0);
+    } finally {
+      await fs.rm(tmpHwPath, { force: true }).catch(() => {});
+    }
 
     // 4. Updating settings for hardware sentinel persists
     const updated = await updateAutomationSettings(

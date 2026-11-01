@@ -2549,13 +2549,21 @@ class JarvisHudController {
     window.open('/solarSystem/index.html', '_blank', 'noopener,noreferrer');
   }
 
-  launchIpScanner() {
+  async launchIpScanner() {
     this.audio.playHudClick(1700);
     this.audio.speak('Sir，已為您啟動 IP Scanner 網路雷達系統。');
-    window.open('http://localhost:63210', '_blank', 'noopener,noreferrer');
-    fetch('/api/launch/ip-scanner', { method: 'POST' }).catch((err) => {
+    try {
+      const res = await fetch('/api/launch/ip-scanner', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        const url = data.webUrl || (data.port ? `http://localhost:${data.port}` : 'http://localhost:63210');
+        window.open(url, '_blank', 'noopener,noreferrer');
+        return;
+      }
+    } catch (err) {
       console.warn('[J.A.R.V.I.S.] Failed to launch IP Scanner:', err);
-    });
+    }
+    window.open('http://localhost:63210', '_blank', 'noopener,noreferrer');
   }
 
   startTacticalTimer(durationSeconds) {

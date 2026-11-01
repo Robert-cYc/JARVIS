@@ -118,6 +118,35 @@ function sendJson(res, statusCode, payload) {
 }
 
 /**
+ * Resolves the active port of the local IP Scanner (LAN Radar) service.
+ * Inspects .active_port marker or scans default range (63210 - 63230).
+ * @param {string} scannerDir
+ * @returns {Promise<number|null>}
+ */
+async function resolveIpScannerPort(scannerDir) {
+  const activePortFile = path.join(scannerDir, '.active_port');
+  try {
+    const raw = await fs.readFile(activePortFile, 'utf-8').catch(() => null);
+    if (raw) {
+      const p = parseInt(raw.trim(), 10);
+      if (p > 0 && p <= 65535) {
+        const check = await checkTcpPort(p, '127.0.0.1', 150).catch(() => ({ open: false }));
+        if (check.open) return p;
+      }
+    }
+  } catch {
+    // Ignore file read error
+  }
+
+  // Scan range 63210 to 63230
+  for (let p = 63210; p <= 63230; p++) {
+    const check = await checkTcpPort(p, '127.0.0.1', 80).catch(() => ({ open: false }));
+    if (check.open) return p;
+  }
+  return null;
+}
+
+/**
  * Creates the J.A.R.V.I.S. HTTP server instance.
  * @returns {http.Server}
  */
@@ -616,50 +645,62 @@ export function createServer() {
         const ipScannerBatPath = path.resolve(process.cwd(), 'ipScanner', 'Autorun.bat');
         const ipScannerDir = path.resolve(process.cwd(), 'ipScanner');
         let launched = false;
-        try {
-          const isUp = await checkTcpPort(63210, '127.0.0.1', 200).catch(() => ({ open: false }));
-          if (isUp.open) {
-            launched = true;
-          } else if (process.platform === 'win32') {
-            const child = spawn('cmd.exe', ['/c', 'start', 'Local Network IP Scanner', 'cmd.exe', '/c', 'Autorun.bat'], {
-              cwd: ipScannerDir,
-              env: { ...process.env, NO_BROWSER: '1' },
-              detached: true,
-              stdio: 'ignore'
-            });
-            child.on('error', (err) => console.warn('[J.A.R.V.I.S.] Failed to spawn Autorun.bat:', err.message));
-            child.unref();
-            launched = true;
-          } else if (process.platform === 'darwin') {
-            const child = spawn('open', [ipScannerBatPath], {
-              cwd: ipScannerDir,
-              env: { ...process.env, NO_BROWSER: '1' },
-              detached: true,
-              stdio: 'ignore'
-            });
-            child.on('error', () => {});
-            child.unref();
-            launched = true;
-          } else {
-            const child = spawn('bash', ['-c', `cd "${ipScannerDir}" && ./Autorun.bat`], {
-              cwd: ipScannerDir,
-              env: { ...process.env, NO_BROWSER: '1' },
-              detached: true,
-              stdio: 'ignore'
-            });
-            child.on('error', () => {});
-            child.unref();
-            launched = true;
+        let activePort = await resolveIpScannerPort(ipScannerDir);
+
+        if (activePort) {
+          launched = true;
+        } else {
+          try {
+            if (process.platform === 'win32') {
+              const child = spawn('cmd.exe', ['/c', 'start', 'Local Network IP Scanner', 'cmd.exe', '/c', 'Autorun.bat'], {
+                cwd: ipScannerDir,
+                env: { ...process.env, NO_BROWSER: '1' },
+                detached: true,
+                stdio: 'ignore'
+              });
+              child.on('error', (err) => console.warn('[J.A.R.V.I.S.] Failed to spawn Autorun.bat:', err.message));
+              child.unref();
+              launched = true;
+            } else if (process.platform === 'darwin') {
+              const child = spawn('open', [ipScannerBatPath], {
+                cwd: ipScannerDir,
+                env: { ...process.env, NO_BROWSER: '1' },
+                detached: true,
+                stdio: 'ignore'
+              });
+              child.on('error', () => {});
+              child.unref();
+              launched = true;
+            } else {
+              const child = spawn('bash', ['-c', `cd "${ipScannerDir}" && ./Autorun.bat`], {
+                cwd: ipScannerDir,
+                env: { ...process.env, NO_BROWSER: '1' },
+                detached: true,
+                stdio: 'ignore'
+              });
+              child.on('error', () => {});
+              child.unref();
+              launched = true;
+            }
+
+            // Await dynamic port assignment (probe up to 1.5 seconds)
+            for (let i = 0; i < 15; i++) {
+              await new Promise((r) => setTimeout(r, 100));
+              activePort = await resolveIpScannerPort(ipScannerDir);
+              if (activePort) break;
+            }
+          } catch {
+            launched = false;
           }
-        } catch {
-          launched = false;
         }
 
+        const finalPort = activePort || 63210;
         sendJson(res, 200, {
           success: true,
           launched,
+          port: finalPort,
           filePath: ipScannerBatPath,
-          webUrl: 'http://localhost:63210'
+          webUrl: `http://localhost:${finalPort}`
         });
         return;
       }
@@ -731,4 +772,49 @@ export function createServer() {
   server.headersTimeout = 0;
   server.keepAliveTimeout = 0;
   return server;
+}
+
+/**
+ * Binds an HTTP server to a preferred port, falling back to subsequent ports if occupied.
+ * @param {import('node:http').Server} server
+ * @param {number} preferredPort
+ * @param {number} [maxAttempts=50]
+ * @returns {Promise<number>}
+ */
+export function listenWithPortFallback(server, preferredPort, maxAttempts = 50) {
+  return new Promise((resolve, reject) => {
+    let currentPort = preferredPort;
+    let attempts = 0;
+
+    const tryListen = () => {
+      attempts += 1;
+
+      const onError = (/** @type {NodeJS.ErrnoException} */ err) => {
+        server.removeListener('listening', onListening);
+        if (err.code === 'EADDRINUSE' && attempts < maxAttempts) {
+          console.warn(
+            `[J.A.R.V.I.S. BOOT] Port ${currentPort} is occupied. Re-routing to port ${currentPort + 1}...`
+          );
+          currentPort += 1;
+          tryListen();
+        } else {
+          reject(err);
+        }
+      };
+
+      const onListening = () => {
+        server.removeListener('error', onError);
+        const address = server.address();
+        const boundPort =
+          typeof address === 'object' && address !== null ? address.port : currentPort;
+        resolve(boundPort);
+      };
+
+      server.once('error', onError);
+      server.once('listening', onListening);
+      server.listen(currentPort);
+    };
+
+    tryListen();
+  });
 }
