@@ -118,30 +118,54 @@ function sendJson(res, statusCode, payload) {
 }
 
 /**
+ * Verifies if a given port is actively serving the IP Scanner (LAN Radar) service.
+ * Performs a fast GET request to /api/my-ip to verify the response signature.
+ * @param {number} port
+ * @returns {Promise<boolean>}
+ */
+export async function isIpScannerPort(port) {
+  if (!port || port <= 0 || port > 65535) return false;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 250);
+    const res = await fetch(`http://127.0.0.1:${port}/api/my-ip`, {
+      signal: controller.signal
+    }).catch(() => null);
+    clearTimeout(timeoutId);
+    if (!res || !res.ok) return false;
+    const data = await res.json().catch(() => null);
+    return Boolean(data && typeof data === 'object' && typeof data.subnet === 'string');
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Resolves the active port of the local IP Scanner (LAN Radar) service.
- * Inspects .active_port marker or scans default range (63210 - 63230).
+ * Verifies .active_port marker and probes candidate ports (63210 - 63225),
+ * strictly excluding JARVIS's own server port and validating /api/my-ip signature.
  * @param {string} scannerDir
+ * @param {number|null} [excludePort=null]
  * @returns {Promise<number|null>}
  */
-async function resolveIpScannerPort(scannerDir) {
+export async function resolveIpScannerPort(scannerDir, excludePort = null) {
   const activePortFile = path.join(scannerDir, '.active_port');
   try {
     const raw = await fs.readFile(activePortFile, 'utf-8').catch(() => null);
     if (raw) {
       const p = parseInt(raw.trim(), 10);
-      if (p > 0 && p <= 65535) {
-        const check = await checkTcpPort(p, '127.0.0.1', 150).catch(() => ({ open: false }));
-        if (check.open) return p;
+      if (p > 0 && p <= 65535 && p !== excludePort) {
+        if (await isIpScannerPort(p)) return p;
       }
     }
   } catch {
     // Ignore file read error
   }
 
-  // Scan range 63210 to 63230
-  for (let p = 63210; p <= 63230; p++) {
-    const check = await checkTcpPort(p, '127.0.0.1', 80).catch(() => ({ open: false }));
-    if (check.open) return p;
+  // Probe ports 63210 to 63225 (strictly skipping excludePort)
+  for (let p = 63210; p <= 63225; p++) {
+    if (p === excludePort) continue;
+    if (await isIpScannerPort(p)) return p;
   }
   return null;
 }
@@ -644,8 +668,9 @@ export function createServer() {
       if (req.method === 'POST' && pathname === '/api/launch/ip-scanner') {
         const ipScannerBatPath = path.resolve(process.cwd(), 'ipScanner', 'Autorun.bat');
         const ipScannerDir = path.resolve(process.cwd(), 'ipScanner');
+        const currentPort = req.socket?.localPort || null;
         let launched = false;
-        let activePort = await resolveIpScannerPort(ipScannerDir);
+        let activePort = await resolveIpScannerPort(ipScannerDir, currentPort);
 
         if (activePort) {
           launched = true;
@@ -683,10 +708,10 @@ export function createServer() {
               launched = true;
             }
 
-            // Await dynamic port assignment (probe up to 1.5 seconds)
-            for (let i = 0; i < 15; i++) {
+            // Await dynamic port assignment (probe up to 2.5 seconds)
+            for (let i = 0; i < 25; i++) {
               await new Promise((r) => setTimeout(r, 100));
-              activePort = await resolveIpScannerPort(ipScannerDir);
+              activePort = await resolveIpScannerPort(ipScannerDir, currentPort);
               if (activePort) break;
             }
           } catch {
