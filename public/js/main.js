@@ -17,6 +17,7 @@ class JarvisHudController {
     this.timerInterval = null;
     this.timerRemainingSeconds = 0;
     this.hourlyChimeEnabled = true;
+    this.newsVoiceEnabled = false; // Default: Mute for Section 07 news & 08 protocols
     this.lastChimedHourKey = '';
     this.focusLayout = false;
     this.lastVaultState = { tasks: [], memories: [], watchlist: [] };
@@ -158,6 +159,8 @@ class JarvisHudController {
       testVoiceBtn: document.getElementById('testVoiceBtn'),
       toggleWebSkillBtn: document.getElementById('toggleWebSkillBtn'),
       toggleForceSearchBtn: document.getElementById('toggleForceSearchBtn'),
+      toggleNewsVoiceBtn: document.getElementById('toggleNewsVoiceBtn'),
+      toggleSection08VoiceBtn: document.getElementById('toggleSection08VoiceBtn'),
       clearHistoryBtn: document.getElementById('clearHistoryBtn'),
 
       timerDisplayBadge: document.getElementById('timerDisplayBadge'),
@@ -378,6 +381,12 @@ class JarvisHudController {
       if (typeof cfg.focusLayout === 'boolean') {
         this.setFocusLayout(cfg.focusLayout, { silent: true, persist: false });
       }
+      if (typeof cfg.newsVoiceEnabled === 'boolean') {
+        this.newsVoiceEnabled = cfg.newsVoiceEnabled;
+      } else {
+        this.newsVoiceEnabled = false; // Default: Mute
+      }
+      this.setNewsVoiceEnabled(this.newsVoiceEnabled, { persist: false, silent: true });
     } catch {
       // Ignore corrupt storage
     }
@@ -403,6 +412,7 @@ class JarvisHudController {
         rate: this.audio.rate,
         hourlyChimeEnabled: this.hourlyChimeEnabled,
         ambientHumEnabled: this.audio.ambientHumEnabled,
+        newsVoiceEnabled: this.newsVoiceEnabled,
         collapsedSections,
         focusLayout: this.focusLayout
       };
@@ -645,6 +655,18 @@ class JarvisHudController {
       });
     }
 
+    if (this.dom.toggleNewsVoiceBtn) {
+      this.dom.toggleNewsVoiceBtn.addEventListener('click', () => {
+        this.setNewsVoiceEnabled(!this.newsVoiceEnabled);
+      });
+    }
+
+    if (this.dom.toggleSection08VoiceBtn) {
+      this.dom.toggleSection08VoiceBtn.addEventListener('click', () => {
+        this.setNewsVoiceEnabled(!this.newsVoiceEnabled);
+      });
+    }
+
     this.dom.testVoiceBtn.addEventListener('click', () => {
       this.audio.playHudClick(2200);
       const lang = this.dom.languageSelect.value;
@@ -664,7 +686,11 @@ class JarvisHudController {
         }
         const prompt = btn.getAttribute('data-prompt');
         if (prompt) {
-          this.handleSendMessage(prompt);
+          const isDirectiveSection = Boolean(
+            btn.closest('[data-section-id="07"], [data-section-id="08"]')
+          );
+          const muteSpeech = isDirectiveSection ? !this.newsVoiceEnabled : false;
+          this.handleSendMessage(prompt, { muteSpeech });
         }
       });
     });
@@ -1002,11 +1028,35 @@ class JarvisHudController {
     });
   }
 
-  _updateToggleChip(el, active) {
+  _updateToggleChip(el, active, silent = false) {
+    if (!el) return;
     el.classList.toggle('active', active);
     const strong = el.querySelector('strong');
-    if (strong) strong.textContent = active ? 'ON' : 'OFF';
-    this.audio.playHudClick();
+    if (strong) {
+      const onText = el.getAttribute('data-on-text') || 'ON';
+      const offText = el.getAttribute('data-off-text') || 'OFF';
+      strong.textContent = active ? onText : offText;
+    }
+    if (!silent) this.audio.playHudClick();
+  }
+
+  /**
+   * Sets news and directives voice readout status (Item 07 & 08).
+   * Default is MUTE (false).
+   * @param {boolean} enabled
+   * @param {{persist?: boolean, silent?: boolean}} [options]
+   */
+  setNewsVoiceEnabled(enabled, { persist = true, silent = false } = {}) {
+    this.newsVoiceEnabled = Boolean(enabled);
+    if (this.dom.toggleNewsVoiceBtn) {
+      this._updateToggleChip(this.dom.toggleNewsVoiceBtn, this.newsVoiceEnabled, silent);
+    }
+    if (this.dom.toggleSection08VoiceBtn) {
+      this._updateToggleChip(this.dom.toggleSection08VoiceBtn, this.newsVoiceEnabled, silent);
+    }
+    if (persist) {
+      this._saveSettings();
+    }
   }
 
   /**
@@ -1803,11 +1853,17 @@ class JarvisHudController {
 
     const directives = [
       {
+        title: '🔇 Toggle News & Protocol Voice Readout (07/08 新聞與指令語音播報開關 / 預設靜音)',
+        tag: 'AUDIO DSP',
+        action: () => this.setNewsVoiceEnabled(!this.newsVoiceEnabled)
+      },
+      {
         title: '🛡️ Run Cyber-Security & Localhost TCP Port Scan (本機連接埠與網路延遲掃描)',
         tag: 'CYBER SECURITY',
         action: () =>
           this.handleSendMessage(
-            'JARVIS，請執行本機連接埠與網路資安掃描 (Port Scan & Latency Check)，檢查目前開啟的本機服務與網路延遲。'
+            'JARVIS，請執行本機連接埠與網路資安掃描 (Port Scan & Latency Check)，檢查目前開啟的本機服務與網路延遲。',
+            { muteSpeech: !this.newsVoiceEnabled }
           )
       },
       {
@@ -1815,7 +1871,8 @@ class JarvisHudController {
         tag: 'DAILY BRIEFING',
         action: () =>
           this.handleSendMessage(
-            '早安 JARVIS，請為我進行今日晨間綜合簡報（包含高雄與台北即時天氣、黃金金價漲勢、台美股金融行情、台灣與科技頭條新聞以及我的待辦事項）。'
+            '早安 JARVIS，請為我進行今日晨間綜合簡報（包含高雄與台北即時天氣、黃金金價漲勢、台美股金融行情、台灣與科技頭條新聞以及我的待辦事項）。',
+            { muteSpeech: !this.newsVoiceEnabled }
           )
       },
       {
@@ -1823,7 +1880,8 @@ class JarvisHudController {
         tag: 'GOLD BULLION',
         action: () =>
           this.handleSendMessage(
-            'JARVIS，請幫我查詢目前國際黃金金價 (GC=F) 的最新報價、近期 5 日漲勢表現與高低區間，並換算成台灣黃金每台錢與每盎司台幣參考價格。'
+            'JARVIS，請幫我查詢目前國際黃金金價 (GC=F) 的最新報價、近期 5 日漲勢表現與高低區間，並換算成台灣黃金每台錢與每盎司台幣參考價格。',
+            { muteSpeech: !this.newsVoiceEnabled }
           )
       },
       {
@@ -1831,7 +1889,8 @@ class JarvisHudController {
         tag: 'MACRO SENTINEL',
         action: () =>
           this.handleSendMessage(
-            'JARVIS，請幫我查詢費城半導體指數 (^SOX)、恐慌指數 (^VIX) 以及美國10年期公債殖利率 (^TNX) 的最新市場行情。'
+            'JARVIS，請幫我查詢費城半導體指數 (^SOX)、恐慌指數 (^VIX) 以及美國10年期公債殖利率 (^TNX) 的最新市場行情。',
+            { muteSpeech: !this.newsVoiceEnabled }
           )
       },
       {
@@ -1839,7 +1898,8 @@ class JarvisHudController {
         tag: 'FUEL TELEMETRY',
         action: () =>
           this.handleSendMessage(
-            'JARVIS，請查詢台灣中油目前最新公佈的 92、95、98 無鉛汽油與柴油每公升牌價，以及國際原油的走勢指標。'
+            'JARVIS，請查詢台灣中油目前最新公佈的 92、95、98 無鉛汽油與柴油每公升牌價，以及國際原油的走勢指標。',
+            { muteSpeech: !this.newsVoiceEnabled }
           )
       },
       {
@@ -1847,7 +1907,8 @@ class JarvisHudController {
         tag: 'FX MATRIX',
         action: () =>
           this.handleSendMessage(
-            'JARVIS，請幫我查詢日圓兌新台幣 (JPYTWD=X) 的最新即時匯率與換匯行情。'
+            'JARVIS，請幫我查詢日圓兌新台幣 (JPYTWD=X) 的最新即時匯率與換匯行情。',
+            { muteSpeech: !this.newsVoiceEnabled }
           )
       },
       {
@@ -1855,7 +1916,8 @@ class JarvisHudController {
         tag: 'AI RADAR',
         action: () =>
           this.handleSendMessage(
-            'JARVIS，請檢索 Hugging Face 目前最熱門的開源 AI 模型榜單與今日精選學術論文。'
+            'JARVIS，請檢索 Hugging Face 目前最熱門的開源 AI 模型榜單與今日精選學術論文。',
+            { muteSpeech: !this.newsVoiceEnabled }
           )
       },
       {
@@ -1863,7 +1925,8 @@ class JarvisHudController {
         tag: 'LOCAL LLM RADAR',
         action: () =>
           this.handleSendMessage(
-            'JARVIS，請搜尋 Reddit r/LocalLLaMA 社群目前最新熱議的本地開源大模型突破與話題。'
+            'JARVIS，請搜尋 Reddit r/LocalLLaMA 社群目前最新熱議的本地開源大模型突破與話題。',
+            { muteSpeech: !this.newsVoiceEnabled }
           )
       },
 
@@ -1915,45 +1978,60 @@ class JarvisHudController {
         title: '🌋 Recent Earthquakes Near Taiwan (台灣近期地震查詢 USGS)',
         tag: 'SEISMIC',
         action: () =>
-          this.handleSendMessage('JARVIS，請幫我查詢台灣附近最近一週的地震紀錄，有沒有比較大的地震？')
+          this.handleSendMessage('JARVIS，請幫我查詢台灣附近最近一週的地震紀錄，有沒有比較大的地震？', {
+            muteSpeech: !this.newsVoiceEnabled
+          })
       },
       {
         title: '🌆 End-of-Day Tactical Debrief & Markdown Export (下班工作回顧與總結)',
         tag: 'AUTOMATION',
         action: () =>
-          this.handleSendMessage('JARVIS，請為我生成今日工作總結與下班戰術回顧 (End-of-Day Tactical Debrief)，核對今日任務並匯出戰術日誌。')
+          this.handleSendMessage(
+            'JARVIS，請為我生成今日工作總結與下班戰術回顧 (End-of-Day Tactical Debrief)，核對今日任務並匯出戰術日誌。',
+            { muteSpeech: !this.newsVoiceEnabled }
+          )
       },
       {
         title: '🌐 Check Localhost Dev Services Health (檢查本機開發伺服器與 Ollama 心跳)',
         tag: 'SENTINEL',
         action: () =>
-          this.handleSendMessage('JARVIS，請執行本機連接埠與資安掃描，檢查 Ollama 與本地開發服務健康狀態。')
+          this.handleSendMessage(
+            'JARVIS，請執行本機連接埠與資安掃描，檢查 Ollama 與本地開發服務健康狀態。',
+            { muteSpeech: !this.newsVoiceEnabled }
+          )
       },
       {
         title: '💻 Search GitHub Trending AI Repositories (搜尋 GitHub 熱門開源專案)',
         tag: 'STARK R&D',
         action: () =>
-          this.handleSendMessage('JARVIS，請幫我搜尋 GitHub 上最熱門的 AI Agent 開源專案。')
+          this.handleSendMessage('JARVIS，請幫我搜尋 GitHub 上最熱門的 AI Agent 開源專案。', {
+            muteSpeech: !this.newsVoiceEnabled
+          })
       },
       {
         title: '🔥 Silicon Valley HackerNews Top Stories (矽谷 HackerNews 科技頭條)',
         tag: 'TECH FEED',
         action: () =>
-          this.handleSendMessage('JARVIS，請幫我查詢今天矽谷 HackerNews 最熱門的科技創業頭條。')
+          this.handleSendMessage('JARVIS，請幫我查詢今天矽谷 HackerNews 最熱門的科技創業頭條。', {
+            muteSpeech: !this.newsVoiceEnabled
+          })
       },
       {
         title: '🧮 Quantum Sandbox: SHA-256 & Math Evaluator (量子沙盒精確計算與雜湊)',
         tag: 'SANDBOX',
         action: () =>
           this.handleSendMessage(
-            'JARVIS，請幫我精確計算 sha256: STARK-MARK-85 以及 (256 * 1024) / 8 的數值。'
+            'JARVIS，請幫我精確計算 sha256: STARK-MARK-85 以及 (256 * 1024) / 8 的數值。',
+            { muteSpeech: !this.newsVoiceEnabled }
           )
       },
       {
         title: '💱 Live Currency & Unit Converter (即時外匯與公英制單位精準換算)',
         tag: 'CONVERTER',
         action: () =>
-          this.handleSendMessage('JARVIS，請幫我精準換算：3000 美金等於多少台幣？以及 250 磅等於幾公斤？')
+          this.handleSendMessage('JARVIS，請幫我精準換算：3000 美金等於多少台幣？以及 250 磅等於幾公斤？', {
+            muteSpeech: !this.newsVoiceEnabled
+          })
       },
       {
         title: '🎨 Switch Suit Theme: HULKBUSTER XLIV (切換浩克毀滅者裝甲主題)',
@@ -2870,7 +2948,7 @@ class JarvisHudController {
     }
   }
 
-  async handleSendMessage(userText) {
+  async handleSendMessage(userText, { muteSpeech = false } = {}) {
     const honorific = this.dom.honorificInput.value.trim() || 'Sir';
     const provider = this.dom.providerSelect.value;
     const rawChosenModel =
@@ -2884,7 +2962,7 @@ class JarvisHudController {
     this.clearPendingPayload();
 
     this.audio.stopSpeaking();
-    this.audio.speechMuted = false;
+    this.audio.speechMuted = Boolean(muteSpeech);
     this.audio.playTelemetryChirp();
 
     let displayUserText = userText;
