@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DEFAULT_VAULT_PATH = path.resolve(__dirname, '../../../data/jarvis_vault.json');
+export const DEFAULT_VAULT_PATH = path.resolve(__dirname, '../../../data/jarvis_vault.json');
 
 const DEFAULT_STATE = {
   memories: [],
@@ -142,6 +142,63 @@ export async function deleteTask(id, vaultPath = DEFAULT_VAULT_PATH) {
   state.tasks = state.tasks.filter((t) => t.id !== id);
   await saveVaultState(state, vaultPath);
   return state;
+}
+
+/**
+ * Archives completed tasks older than archiveDays to jarvis_tasks_archive.json.
+ * @param {object} [options]
+ * @param {string} [options.vaultPath]
+ * @param {string} [options.archivePath]
+ * @param {number} [options.archiveDays=7]
+ * @param {Date} [options.currentTime=new Date()]
+ * @returns {Promise<{archivedCount: number, archivedTasks: Array<object>}>}
+ */
+export async function archiveCompletedTasks({
+  vaultPath = DEFAULT_VAULT_PATH,
+  archivePath = path.resolve(path.dirname(vaultPath), 'jarvis_tasks_archive.json'),
+  archiveDays = 7,
+  currentTime = new Date()
+} = {}) {
+  const vault = await getVaultState(vaultPath);
+  const nowMs = currentTime.getTime();
+  const maxAgeMs = Math.max(1, archiveDays) * 24 * 60 * 60 * 1000;
+
+  const toArchive = [];
+  const keepTasks = [];
+
+  for (const t of vault.tasks) {
+    if (t.completed) {
+      const createdMs = t.createdAt ? new Date(t.createdAt).getTime() : 0;
+      if (nowMs - createdMs >= maxAgeMs) {
+        toArchive.push({ ...t, archivedAt: currentTime.toISOString() });
+        continue;
+      }
+    }
+    keepTasks.push(t);
+  }
+
+  if (toArchive.length === 0) {
+    return { archivedCount: 0, archivedTasks: [] };
+  }
+
+  let archiveData = [];
+  try {
+    const raw = await fs.readFile(archivePath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) archiveData = parsed;
+  } catch {}
+
+  archiveData.unshift(...toArchive);
+  await fs.mkdir(path.dirname(archivePath), { recursive: true });
+  await fs.writeFile(archivePath, JSON.stringify(archiveData, null, 2), 'utf-8');
+
+  vault.tasks = keepTasks;
+  await saveVaultState(vault, vaultPath);
+
+  return {
+    archivedCount: toArchive.length,
+    archivedTasks: toArchive
+  };
 }
 
 /**

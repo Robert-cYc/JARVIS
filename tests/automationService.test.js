@@ -9,12 +9,17 @@ import {
   updateAutomationSettings,
   generateScheduledMorningBriefing,
   generateEndOfDayDebrief,
+  generateTaiwanMarketBell,
+  generateUsMarketBell,
+  checkMarketVolatility,
+  generateWeeklyTacticalReview,
   checkServiceHealth,
   checkHardwareHealth,
   checkUptimeSentinel,
   restartOllamaService,
   runAutomationTick
 } from '../src/server/services/automationService.js';
+import { archiveCompletedTasks, addTask, toggleTask } from '../src/server/services/memoryVaultService.js';
 
 const tmpAutoPath = path.join(os.tmpdir(), `jarvis_test_auto_${Date.now()}.json`);
 const tmpReportsDir = path.join(os.tmpdir(), `jarvis_test_reports_${Date.now()}`);
@@ -101,8 +106,8 @@ describe('J.A.R.V.I.S. Automation Core (Briefing, Debrief, Service Sentinel)', (
       onEvent: (evt) => events.push(evt)
     });
 
-    assert.ok(events.length >= 1);
-    assert.equal(events[0].kind, 'morning_briefing');
+    const briefings = events.filter((e) => e.kind === 'morning_briefing');
+    assert.equal(briefings.length, 1);
 
     // Second tick on same date shouldn't fire again
     const events2 = [];
@@ -112,7 +117,8 @@ describe('J.A.R.V.I.S. Automation Core (Briefing, Debrief, Service Sentinel)', (
       onEvent: (evt) => events2.push(evt)
     });
 
-    assert.equal(events2.length, 0);
+    const briefings2 = events2.filter((e) => e.kind === 'morning_briefing');
+    assert.equal(briefings2.length, 0);
   });
 
   it('evaluates hardware and disk sentinel health alerts with cooldown', async () => {
@@ -347,5 +353,184 @@ describe('J.A.R.V.I.S. Automation Core (Briefing, Debrief, Service Sentinel)', (
     assert.ok(focusAlert);
     assert.ok(focusAlert.title.includes('護眼與姿態健康提醒'));
     assert.ok(focusAlert.speechText.includes('50 分鐘'));
+  });
+
+  it('generates Taiwan market open/close and US market open reports accurately', async () => {
+    const mockFetcher = async () => ({
+      quotes: [
+        { symbol: '^TWII', name: '加權指數', price: 23500.5, change: 150.2, changePercent: 0.64 },
+        { symbol: '2330.TW', name: '台積電', price: 1080.0, change: 25.0, changePercent: 2.37 },
+        { symbol: '^GSPC', name: 'S&P 500', price: 5800.0, change: 30.5, changePercent: 0.53 },
+        { symbol: '^IXIC', name: 'Nasdaq', price: 18500.0, change: 120.0, changePercent: 0.65 },
+        { symbol: '^SOX', name: 'PHLX Semiconductor', price: 5200.0, change: 45.0, changePercent: 0.87 },
+        { symbol: '^VIX', name: 'CBOE VIX', price: 14.8, change: -0.5, changePercent: -3.27 },
+        { symbol: 'NVDA', name: 'NVIDIA', price: 142.5, change: 3.2, changePercent: 2.3 }
+      ]
+    });
+
+    // 1. Taiwan Market Open
+    const twOpen = await generateTaiwanMarketBell({ type: 'open', fetcher: mockFetcher });
+    assert.ok(twOpen.title.includes('台股開盤動態戰報'));
+    assert.ok(twOpen.markdownReport.includes('23,500.5'));
+    assert.ok(twOpen.speechText.includes('台股現已開盤'));
+
+    // 2. Taiwan Market Close
+    const twClose = await generateTaiwanMarketBell({ type: 'close', fetcher: mockFetcher });
+    assert.ok(twClose.title.includes('台股收盤綜合結算'));
+    assert.ok(twClose.speechText.includes('台股今日已收盤'));
+
+    // 3. US Market Open
+    const usOpen = await generateUsMarketBell({ fetcher: mockFetcher });
+    assert.ok(usOpen.title.includes('美股開盤夜間快訊'));
+    assert.ok(usOpen.markdownReport.includes('5,800'));
+    assert.ok(usOpen.speechText.includes('美股現已開盤'));
+  });
+
+  it('triggers volatility alerts for assets moving >= 1.5% with cooldown', async () => {
+    const mockVolFetcher = async () => ({
+      quotes: [
+        { symbol: 'GC=F', name: 'Gold', price: 2750.5, changePercent: 1.82 },
+        { symbol: 'BTC-USD', name: 'Bitcoin', price: 72000, changePercent: -2.45 },
+        { symbol: 'NVDA', name: 'NVIDIA', price: 140, changePercent: 0.5 }
+      ]
+    });
+
+    const now = new Date('2026-11-02T10:00:00');
+    const alerts = await checkMarketVolatility({
+      settings: { enabled: true, symbols: ['GC=F', 'BTC-USD', 'NVDA'], thresholdPercent: 1.5, cooldownMinutes: 60 },
+      filePath: tmpAutoPath,
+      fetcher: mockVolFetcher,
+      currentTime: now
+    });
+
+    assert.equal(alerts.length, 2);
+    assert.ok(alerts.some((a) => a.symbol === 'GC=F'));
+    assert.ok(alerts.some((a) => a.symbol === 'BTC-USD'));
+
+    // Second check within cooldown period should return 0 alerts
+    const alerts2 = await checkMarketVolatility({
+      settings: { enabled: true, symbols: ['GC=F', 'BTC-USD', 'NVDA'], thresholdPercent: 1.5, cooldownMinutes: 60 },
+      filePath: tmpAutoPath,
+      fetcher: mockVolFetcher,
+      currentTime: new Date('2026-11-02T10:15:00')
+    });
+    assert.equal(alerts2.length, 0);
+  });
+
+  it('generates weekly tactical review and auto-archives completed tasks', async () => {
+    const tmpVaultPath = path.join(os.tmpdir(), `jarvis_test_vault_${Date.now()}.json`);
+    const tmpArchivePath = path.join(os.tmpdir(), `jarvis_test_archive_${Date.now()}.json`);
+
+    try {
+      // Setup vault tasks
+      const t1 = await addTask('Stark Core Mark 85 Upgrade', tmpVaultPath);
+      const t2 = await addTask('Legacy Calibration Mission', tmpVaultPath);
+      await toggleTask(t1.id, tmpVaultPath); // completed
+
+      // 1. Weekly tactical review
+      const review = await generateWeeklyTacticalReview({
+        vaultFetcher: () => fs.readFile(tmpVaultPath, 'utf-8').then(JSON.parse),
+        reportsDir: tmpReportsDir,
+        saveToFile: true,
+        currentTime: new Date('2026-10-30T18:00:00') // Friday
+      });
+
+      assert.ok(review.title.includes('週末戰術總結週報'));
+      assert.ok(review.filePath);
+      assert.equal(review.completedCount, 1);
+      assert.equal(review.activeCount, 1);
+      assert.ok(review.markdownReport.includes('Stark Core Mark 85 Upgrade'));
+
+      // 2. Task Auto-Archive (simulate task completed 10 days ago)
+      const vaultData = JSON.parse(await fs.readFile(tmpVaultPath, 'utf-8'));
+      const target = vaultData.tasks.find((t) => t.id === t1.id);
+      target.createdAt = new Date(Date.now() - 10 * 86400000).toISOString();
+      await fs.writeFile(tmpVaultPath, JSON.stringify(vaultData), 'utf-8');
+
+      const archiveRes = await archiveCompletedTasks({
+        vaultPath: tmpVaultPath,
+        archivePath: tmpArchivePath,
+        archiveDays: 7
+      });
+
+      assert.equal(archiveRes.archivedCount, 1);
+      const updatedVault = JSON.parse(await fs.readFile(tmpVaultPath, 'utf-8'));
+      assert.equal(updatedVault.tasks.length, 1); // only the active task remains
+      assert.equal(updatedVault.tasks[0].id, t2.id);
+
+      const archiveData = JSON.parse(await fs.readFile(tmpArchivePath, 'utf-8'));
+      assert.equal(archiveData.length, 1);
+      assert.equal(archiveData[0].id, t1.id);
+    } finally {
+      await fs.rm(tmpVaultPath, { force: true }).catch(() => {});
+      await fs.rm(tmpArchivePath, { force: true }).catch(() => {});
+    }
+  });
+
+  it('triggers Taiwan market bells, US market bell, and weekly review via runAutomationTick', async () => {
+    const mockFetcher = async () => ({
+      quotes: [
+        { symbol: '^TWII', price: 23500, change: 100, changePercent: 0.5 },
+        { symbol: '2330.TW', price: 1080, change: 20, changePercent: 1.8 },
+        { symbol: '^GSPC', price: 5800, change: 25, changePercent: 0.4 },
+        { symbol: '^VIX', price: 15.0, change: 0, changePercent: 0 }
+      ]
+    });
+
+    // 1. Taiwan Market Open (09:00 on Monday)
+    const monday0900 = new Date('2026-11-02T09:00:00');
+    const events = [];
+    await runAutomationTick({
+      filePath: tmpAutoPath,
+      currentTime: monday0900,
+      marketFetcher: mockFetcher,
+      onEvent: (evt) => events.push(evt)
+    });
+
+    const openEvent = events.find((e) => e.kind === 'market_open_tw');
+    assert.ok(openEvent);
+    assert.ok(openEvent.title.includes('台股開盤動態戰報'));
+
+    // 2. Taiwan Market Close (13:30 on Monday)
+    const monday1330 = new Date('2026-11-02T13:30:00');
+    const closeEvents = [];
+    await runAutomationTick({
+      filePath: tmpAutoPath,
+      currentTime: monday1330,
+      marketFetcher: mockFetcher,
+      onEvent: (evt) => closeEvents.push(evt)
+    });
+
+    const closeEvent = closeEvents.find((e) => e.kind === 'market_close_tw');
+    assert.ok(closeEvent);
+    assert.ok(closeEvent.title.includes('台股收盤綜合結算'));
+
+    // 3. US Market Open (21:30 on Monday)
+    const monday2130 = new Date('2026-11-02T21:30:00');
+    const usEvents = [];
+    await runAutomationTick({
+      filePath: tmpAutoPath,
+      currentTime: monday2130,
+      marketFetcher: mockFetcher,
+      onEvent: (evt) => usEvents.push(evt)
+    });
+
+    const usEvent = usEvents.find((e) => e.kind === 'market_open_us');
+    assert.ok(usEvent);
+    assert.ok(usEvent.title.includes('美股開盤夜間快訊'));
+
+    // 4. Friday 18:00 Weekly Review
+    const friday1800 = new Date('2026-11-06T18:00:00');
+    const weeklyEvents = [];
+    await runAutomationTick({
+      filePath: tmpAutoPath,
+      currentTime: friday1800,
+      marketFetcher: mockFetcher,
+      onEvent: (evt) => weeklyEvents.push(evt)
+    });
+
+    const weekEvent = weeklyEvents.find((e) => e.kind === 'weekly_review');
+    assert.ok(weekEvent);
+    assert.ok(weekEvent.title.includes('週末戰術總結週報'));
   });
 });

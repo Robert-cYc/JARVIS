@@ -9,7 +9,7 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { checkTcpPort } from './networkScannerService.js';
-import { getVaultState } from './memoryVaultService.js';
+import { getVaultState, archiveCompletedTasks } from './memoryVaultService.js';
 import { fetchMarketTelemetry, fetchWeatherTelemetry, fetchTodaysNews, fetchTaiwanFuelPrices } from './webSkillsService.js';
 import { getSystemTelemetry } from './telemetryService.js';
 
@@ -72,6 +72,32 @@ const DEFAULT_STATE = {
       diskMinFreeGb: 10,
       diskMaxUsagePercent: 90,
       cooldownMinutes: 15
+    },
+    taiwanMarketBells: {
+      enabled: true,
+      openTime: '09:00',
+      closeTime: '13:30'
+    },
+    usMarketBell: {
+      enabled: true,
+      time: '21:30'
+    },
+    volatilitySentinel: {
+      enabled: true,
+      symbols: ['GC=F', 'BTC-USD', '2330.TW', 'NVDA'],
+      thresholdPercent: 1.5,
+      cooldownMinutes: 60
+    },
+    weeklyTacticalReview: {
+      enabled: true,
+      dayOfWeek: 5,
+      time: '18:00',
+      autoSaveMarkdown: true
+    },
+    taskAutoArchive: {
+      enabled: true,
+      archiveDays: 7,
+      time: '00:00'
     }
   },
   lastFired: {
@@ -79,7 +105,13 @@ const DEFAULT_STATE = {
     endOfDayDebriefDate: '',
     fridayFuelAlertDate: '',
     lastChimeHour: -1,
-    lastFocusAlertMs: 0
+    lastFocusAlertMs: 0,
+    twMarketOpenDate: '',
+    twMarketCloseDate: '',
+    usMarketOpenDate: '',
+    weeklyReviewDate: '',
+    taskAutoArchiveDate: '',
+    volatilityCooldowns: {}
   },
   hardwareCooldowns: {},
   serviceStatus: {}, // { "Ollama Local LLM": { open: true, lastCheck: "..." } }
@@ -112,7 +144,12 @@ export async function getAutomationState(filePath = DEFAULT_AUTOMATION_PATH) {
         fridayFuelAlert: { ...DEFAULT_STATE.settings.fridayFuelAlert, ...(parsed.settings?.fridayFuelAlert || {}) },
         hourlyChime: { ...DEFAULT_STATE.settings.hourlyChime, ...(parsed.settings?.hourlyChime || {}) },
         focusHealthSentinel: { ...DEFAULT_STATE.settings.focusHealthSentinel, ...(parsed.settings?.focusHealthSentinel || {}) },
-        hardwareSentinel: { ...DEFAULT_STATE.settings.hardwareSentinel, ...(parsed.settings?.hardwareSentinel || {}) }
+        hardwareSentinel: { ...DEFAULT_STATE.settings.hardwareSentinel, ...(parsed.settings?.hardwareSentinel || {}) },
+        taiwanMarketBells: { ...DEFAULT_STATE.settings.taiwanMarketBells, ...(parsed.settings?.taiwanMarketBells || {}) },
+        usMarketBell: { ...DEFAULT_STATE.settings.usMarketBell, ...(parsed.settings?.usMarketBell || {}) },
+        volatilitySentinel: { ...DEFAULT_STATE.settings.volatilitySentinel, ...(parsed.settings?.volatilitySentinel || {}) },
+        weeklyTacticalReview: { ...DEFAULT_STATE.settings.weeklyTacticalReview, ...(parsed.settings?.weeklyTacticalReview || {}) },
+        taskAutoArchive: { ...DEFAULT_STATE.settings.taskAutoArchive, ...(parsed.settings?.taskAutoArchive || {}) }
       },
       lastFired: { ...DEFAULT_STATE.lastFired, ...(parsed.lastFired || {}) },
       hardwareCooldowns: parsed.hardwareCooldowns || {},
@@ -170,6 +207,21 @@ export async function updateAutomationSettings(patch, filePath = DEFAULT_AUTOMAT
         ...state.settings.hardwareSentinel,
         ...patch.hardwareSentinel
       };
+    }
+    if (patch.taiwanMarketBells) {
+      state.settings.taiwanMarketBells = { ...state.settings.taiwanMarketBells, ...patch.taiwanMarketBells };
+    }
+    if (patch.usMarketBell) {
+      state.settings.usMarketBell = { ...state.settings.usMarketBell, ...patch.usMarketBell };
+    }
+    if (patch.volatilitySentinel) {
+      state.settings.volatilitySentinel = { ...state.settings.volatilitySentinel, ...patch.volatilitySentinel };
+    }
+    if (patch.weeklyTacticalReview) {
+      state.settings.weeklyTacticalReview = { ...state.settings.weeklyTacticalReview, ...patch.weeklyTacticalReview };
+    }
+    if (patch.taskAutoArchive) {
+      state.settings.taskAutoArchive = { ...state.settings.taskAutoArchive, ...patch.taskAutoArchive };
     }
     await saveAutomationState(state, filePath);
     return state;
@@ -304,6 +356,287 @@ export async function generateEndOfDayDebrief({ saveToFile = true, reportsDir = 
     speechText,
     markdownReport,
     filePath: savedFilePath
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 3. Taiwan Market Bells (09:00 Open & 13:30 Close)
+// ---------------------------------------------------------------------------
+
+/**
+ * Generates Taiwan Market Opening (09:00) or Closing (13:30) Bell Tactical Report.
+ * @param {object} [options]
+ * @param {'open'|'close'} [options.type='open']
+ * @param {Function} [options.fetcher]
+ * @param {Function} [options.vaultFetcher]
+ * @returns {Promise<{title: string, markdownReport: string, speechText: string, quotes: Array<object>}>}
+ */
+export async function generateTaiwanMarketBell({
+  type = 'open',
+  fetcher = fetchMarketTelemetry,
+  vaultFetcher = getVaultState
+} = {}) {
+  const vault = await vaultFetcher().catch(() => ({ watchlist: [] }));
+  const watchlist = Array.isArray(vault?.watchlist) ? vault.watchlist : [];
+  const symbols = ['^TWII', '2330.TW', ...watchlist];
+  const market = await fetcher(symbols, watchlist).catch(() => null);
+
+  const quotes = market?.quotes || [];
+  const taiex = quotes.find((q) => q.symbol === '^TWII') || {};
+  const tsmc = quotes.find((q) => q.symbol === '2330.TW') || {};
+
+  const isOpen = type === 'open';
+  const title = isOpen
+    ? '🔔 台股開盤動態戰報 [09:00]'
+    : '📊 台股收盤綜合結算 [13:30]';
+
+  const taiexPrice = taiex.price ? taiex.price.toLocaleString() : '---';
+  const taiexChg = taiex.change ?? '0.00';
+  const taiexChgPct = taiex.changePercent ?? '0.00';
+  const taiexSign = Number(taiexChg) >= 0 ? '+' : '';
+
+  const tsmcPrice = tsmc.price ? `NT$${tsmc.price.toLocaleString()}` : '---';
+  const tsmcChgPct = tsmc.changePercent ? `${Number(tsmc.changePercent) >= 0 ? '+' : ''}${tsmc.changePercent}%` : '0.00%';
+
+  const lines = [
+    `### ${title}`,
+    `- **加權指數 (TAIEX ^TWII)**: ${taiexPrice} (${taiexSign}${taiexChg} / ${taiexSign}${taiexChgPct}%)`,
+    `- **台積電 (TSMC 2330)**: ${tsmcPrice} (${tsmcChgPct})`
+  ];
+
+  if (watchlist.length > 0) {
+    lines.push(`---`, `#### 🎯 核心自選股盤況 (${watchlist.length} 檔)`);
+    for (const sym of watchlist.slice(0, 8)) {
+      const q = quotes.find((item) => item.symbol === sym);
+      if (q && q.price) {
+        const sign = Number(q.change || 0) >= 0 ? '+' : '';
+        lines.push(`- **${q.symbol}**: ${q.price} (${sign}${q.changePercent || 0}%)`);
+      }
+    }
+  }
+
+  const speechText = isOpen
+    ? `Sir，台股現已開盤。加權指數目前為 ${taiexPrice} 點，台積電開盤價為 ${tsmcPrice}。`
+    : `Sir，台股今日已收盤。加權指數收於 ${taiexPrice} 點，今日變動 ${taiexSign}${taiexChgPct}%。`;
+
+  return {
+    title,
+    markdownReport: lines.join('\n'),
+    speechText,
+    quotes
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 4. US Market Bell (21:30 Open)
+// ---------------------------------------------------------------------------
+
+/**
+ * Generates US Market Opening (21:30) Pre-Market & Open Tactical Briefing.
+ * @param {object} [options]
+ * @param {Function} [options.fetcher]
+ * @returns {Promise<{title: string, markdownReport: string, speechText: string, quotes: Array<object>}>}
+ */
+export async function generateUsMarketBell({ fetcher = fetchMarketTelemetry } = {}) {
+  const symbols = ['^GSPC', '^IXIC', '^SOX', '^VIX', 'NVDA', 'TSLA'];
+  const market = await fetcher(symbols, []).catch(() => null);
+  const quotes = market?.quotes || [];
+
+  const sp500 = quotes.find((q) => q.symbol === '^GSPC') || {};
+  const nasdaq = quotes.find((q) => q.symbol === '^IXIC') || {};
+  const sox = quotes.find((q) => q.symbol === '^SOX') || {};
+  const vix = quotes.find((q) => q.symbol === '^VIX') || {};
+  const nvda = quotes.find((q) => q.symbol === 'NVDA') || {};
+
+  const title = '🗽 美股開盤夜間快訊 [21:30]';
+  const lines = [
+    `### ${title}`,
+    `- **標普 500 (S&P 500 ^GSPC)**: ${sp500.price ? sp500.price.toLocaleString() : '---'} (${Number(sp500.change || 0) >= 0 ? '+' : ''}${sp500.changePercent || '0.00'}%)`,
+    `- **那斯達克 (Nasdaq ^IXIC)**: ${nasdaq.price ? nasdaq.price.toLocaleString() : '---'} (${Number(nasdaq.change || 0) >= 0 ? '+' : ''}${nasdaq.changePercent || '0.00'}%)`,
+    `- **費城半導體 (^SOX)**: ${sox.price ? sox.price.toLocaleString() : '---'} (${Number(sox.change || 0) >= 0 ? '+' : ''}${sox.changePercent || '0.00'}%)`,
+    `- **恐慌指數 (CBOE VIX)**: ${vix.price || '---'}`,
+    `- **NVIDIA (NVDA)**: $${nvda.price || '---'} (${Number(nvda.change || 0) >= 0 ? '+' : ''}${nvda.changePercent || '0.00'}%)`
+  ];
+
+  const speechText = `Sir，美股現已開盤。標普 500 指數為 ${sp500.price || '---'} 點，恐慌指數 VIX 目前為 ${vix.price || '---'}。`;
+
+  return {
+    title,
+    markdownReport: lines.join('\n'),
+    speechText,
+    quotes
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 5. Market Volatility Sentinel (Sudden Spikes >= 1.5%)
+// ---------------------------------------------------------------------------
+
+/**
+ * Monitors key financial assets for rapid volatility spikes (e.g. >= 1.5% in 1 hr).
+ * @param {object} [options]
+ * @param {object} [options.settings]
+ * @param {object} [options.state]
+ * @param {string} [options.filePath]
+ * @param {Function} [options.fetcher]
+ * @param {Date} [options.currentTime]
+ * @returns {Promise<Array<object>>}
+ */
+export async function checkMarketVolatility({
+  settings = {},
+  state = null,
+  filePath = DEFAULT_AUTOMATION_PATH,
+  fetcher = fetchMarketTelemetry,
+  currentTime = new Date()
+} = {}) {
+  const cfg = {
+    enabled: true,
+    symbols: ['GC=F', 'BTC-USD', '2330.TW', 'NVDA'],
+    thresholdPercent: 1.5,
+    cooldownMinutes: 60,
+    ...settings
+  };
+
+  if (!cfg.enabled || !Array.isArray(cfg.symbols) || cfg.symbols.length === 0) {
+    return [];
+  }
+
+  const market = await fetcher(cfg.symbols).catch(() => null);
+  const quotes = market?.quotes || [];
+  if (quotes.length === 0) return [];
+
+  const targetState = state || (await getAutomationState(filePath));
+  if (!targetState.lastFired) targetState.lastFired = {};
+  if (!targetState.lastFired.volatilityCooldowns) {
+    targetState.lastFired.volatilityCooldowns = {};
+  }
+  const cooldowns = targetState.lastFired.volatilityCooldowns;
+  const nowMs = currentTime.getTime();
+  const cooldownMs = (cfg.cooldownMinutes || 60) * 60 * 1000;
+  const alerts = [];
+
+  for (const q of quotes) {
+    const chgPct = Math.abs(Number(q.changePercent || 0));
+    if (chgPct >= cfg.thresholdPercent) {
+      const key = `vol_${q.symbol}`;
+      const lastFired = cooldowns[key] || 0;
+      if (nowMs - lastFired >= cooldownMs) {
+        cooldowns[key] = nowMs;
+        const sign = Number(q.changePercent || 0) >= 0 ? '+' : '';
+        alerts.push({
+          kind: 'volatility_alert',
+          symbol: q.symbol,
+          title: `⚡ 行情劇烈波動預警 [${q.symbol}]`,
+          message: `標的 [${q.name || q.symbol}] 最新報價 ${q.price}，變動幅度達 ${sign}${q.changePercent}%，已超過 ${cfg.thresholdPercent}% 預警閾值。`,
+          speechText: `Sir，注意：${q.symbol} 出現劇烈波動，變動幅度達 ${sign}${q.changePercent}%。`
+        });
+      }
+    }
+  }
+
+  if (alerts.length > 0) {
+    targetState.lastFired.volatilityCooldowns = cooldowns;
+    await saveAutomationState(targetState, filePath);
+  }
+
+  return alerts;
+}
+
+// ---------------------------------------------------------------------------
+// 6. Weekly Tactical Debrief / Executive Review (Friday 18:00)
+// ---------------------------------------------------------------------------
+
+/**
+ * Generates an executive weekly tactical summary from vault tasks & memories.
+ * @param {object} [options]
+ * @param {Function} [options.vaultFetcher]
+ * @param {string} [options.reportsDir]
+ * @param {boolean} [options.saveToFile]
+ * @param {Date} [options.currentTime]
+ * @returns {Promise<{title: string, weekKey: string, markdownReport: string, speechText: string, completedCount: number, activeCount: number, filePath?: string}>}
+ */
+export async function generateWeeklyTacticalReview({
+  vaultFetcher = getVaultState,
+  reportsDir = REPORTS_DIR,
+  saveToFile = true,
+  currentTime = new Date()
+} = {}) {
+  const vault = await vaultFetcher().catch(() => ({ tasks: [], memories: [] }));
+  const allTasks = Array.isArray(vault?.tasks) ? vault.tasks : [];
+  const completedTasks = allTasks.filter((t) => t.completed);
+  const activeTasks = allTasks.filter((t) => !t.completed);
+  const memories = Array.isArray(vault?.memories) ? vault.memories : [];
+
+  const now = currentTime;
+  const tempDate = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  const dayNum = tempDate.getUTCDay() || 7;
+  tempDate.setUTCDate(tempDate.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(tempDate.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((tempDate - yearStart) / 86400000 + 1) / 7);
+  const weekKey = `${tempDate.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+
+  const title = `📋 J.A.R.V.I.S. 週末戰術總結週報 [${weekKey}]`;
+  const lines = [
+    `# STARK INDUSTRIES // WEEKLY TACTICAL REVIEW`,
+    `**週期代號**: ${weekKey} | **生成時間**: ${now.toISOString().replace('T', ' ').slice(0, 19)}`,
+    `**主控系統**: J.A.R.V.I.S. MARK LXXXV AUTONOMOUS PROTOCOL`,
+    `---`,
+    `## 📊 本週戰術矩陣成果統計`,
+    `- **已達成待辦任務**: ${completedTasks.length} 項`,
+    `- **進行中/待延續任務**: ${activeTasks.length} 項`,
+    `- **長期記憶存檔庫**: ${memories.length} 筆紀錄`,
+    ``,
+    `## ✅ 本週完成重要項目 (Completed Tasks)`
+  ];
+
+  if (completedTasks.length === 0) {
+    lines.push(`*本週無已標記完成之待辦項目。*`);
+  } else {
+    completedTasks.slice(0, 15).forEach((t, idx) => {
+      lines.push(`${idx + 1}. [x] ${t.title}`);
+    });
+  }
+
+  lines.push(``, `## ⏳ 延續至下週之待辦事項 (Pending Focus)`);
+  if (activeTasks.length === 0) {
+    lines.push(`*目前無待辦懸掛任務，戰術清單全數清空。*`);
+  } else {
+    activeTasks.slice(0, 10).forEach((t, idx) => {
+      lines.push(`${idx + 1}. [ ] ${t.title}`);
+    });
+  }
+
+  if (memories.length > 0) {
+    lines.push(``, `## 🧠 核心記憶庫亮點 (Vault Memory Intel)`);
+    memories.slice(0, 5).forEach((m, idx) => {
+      lines.push(`- **[${m.category || 'INTEL'}]** ${m.content}`);
+    });
+  }
+
+  lines.push(
+    ``,
+    `---`,
+    `*週結算摘要：本週任務達成率 ${allTasks.length > 0 ? Math.round((completedTasks.length / allTasks.length) * 100) : 100}%。祝您週末愉快，充電整備，Sir。*`
+  );
+
+  const markdownReport = lines.join('\n');
+  const speechText = `Sir，週末戰術總結週報已生成。本週共完成 ${completedTasks.length} 項任務，目前尚有 ${activeTasks.length} 項進行中項目。已為您匯出週報。`;
+
+  let filePath = null;
+  if (saveToFile) {
+    await fs.mkdir(reportsDir, { recursive: true });
+    filePath = path.join(reportsDir, `JARVIS_Weekly_Review_${weekKey}.md`);
+    await fs.writeFile(filePath, markdownReport, 'utf-8');
+  }
+
+  return {
+    title,
+    weekKey,
+    markdownReport,
+    speechText,
+    completedCount: completedTasks.length,
+    activeCount: activeTasks.length,
+    filePath
   };
 }
 
@@ -642,6 +975,8 @@ export async function runAutomationTick({
   filePath = DEFAULT_AUTOMATION_PATH,
   currentTime = new Date(),
   fetchPrices = fetchTaiwanFuelPrices,
+  marketFetcher = fetchMarketTelemetry,
+  vaultFetcher = getVaultState,
   spawner = spawn,
   fetcher = fetch
 }) {
@@ -649,6 +984,7 @@ export async function runAutomationTick({
   const now = currentTime;
   const currentHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const currentDateKey = now.toISOString().slice(0, 10);
+  const isWeekday = now.getDay() >= 1 && now.getDay() <= 5;
 
   // 1. Scheduled Morning Briefing Check
   if (
@@ -672,7 +1008,7 @@ export async function runAutomationTick({
     }
   }
 
-  // 2. Scheduled End-of-Day Tactical Debrief Check (Option 2: 18:30 Markdown Auto-Generation)
+  // 2. Scheduled End-of-Day Tactical Debrief Check
   if (
     state.settings.endOfDayDebrief.enabled &&
     state.settings.endOfDayDebrief.time === currentHHMM &&
@@ -694,7 +1030,165 @@ export async function runAutomationTick({
     }
   }
 
-  // 3. Friday Afternoon Upcoming Fuel Price Alert (Option 2: Friday 17:00 Alert)
+  // 3. Taiwan Market Opening Bell (09:00, Mon-Fri)
+  const twBellsCfg = state.settings.taiwanMarketBells;
+  if (
+    twBellsCfg?.enabled &&
+    isWeekday &&
+    currentHHMM === (twBellsCfg.openTime || '09:00') &&
+    state.lastFired.twMarketOpenDate !== currentDateKey
+  ) {
+    state.lastFired.twMarketOpenDate = currentDateKey;
+    await saveAutomationState(state, filePath);
+
+    try {
+      const report = await generateTaiwanMarketBell({
+        type: 'open',
+        fetcher: marketFetcher,
+        vaultFetcher
+      });
+      onEvent({
+        kind: 'market_open_tw',
+        title: report.title,
+        message: report.markdownReport,
+        speechText: report.speechText
+      });
+    } catch (err) {
+      console.warn(`[J.A.R.V.I.S. AUTOMATION] TW market open trigger failed: ${err.message}`);
+    }
+  }
+
+  // 4. Taiwan Market Closing Bell (13:30, Mon-Fri)
+  if (
+    twBellsCfg?.enabled &&
+    isWeekday &&
+    currentHHMM === (twBellsCfg.closeTime || '13:30') &&
+    state.lastFired.twMarketCloseDate !== currentDateKey
+  ) {
+    state.lastFired.twMarketCloseDate = currentDateKey;
+    await saveAutomationState(state, filePath);
+
+    try {
+      const report = await generateTaiwanMarketBell({
+        type: 'close',
+        fetcher: marketFetcher,
+        vaultFetcher
+      });
+      onEvent({
+        kind: 'market_close_tw',
+        title: report.title,
+        message: report.markdownReport,
+        speechText: report.speechText
+      });
+    } catch (err) {
+      console.warn(`[J.A.R.V.I.S. AUTOMATION] TW market close trigger failed: ${err.message}`);
+    }
+  }
+
+  // 5. US Market Opening Bell (21:30, Mon-Fri)
+  const usBellCfg = state.settings.usMarketBell;
+  if (
+    usBellCfg?.enabled &&
+    isWeekday &&
+    currentHHMM === (usBellCfg.time || '21:30') &&
+    state.lastFired.usMarketOpenDate !== currentDateKey
+  ) {
+    state.lastFired.usMarketOpenDate = currentDateKey;
+    await saveAutomationState(state, filePath);
+
+    try {
+      const report = await generateUsMarketBell({ fetcher: marketFetcher });
+      onEvent({
+        kind: 'market_open_us',
+        title: report.title,
+        message: report.markdownReport,
+        speechText: report.speechText
+      });
+    } catch (err) {
+      console.warn(`[J.A.R.V.I.S. AUTOMATION] US market open trigger failed: ${err.message}`);
+    }
+  }
+
+  // 6. Friday 18:00 Weekly Tactical Review
+  const weeklyCfg = state.settings.weeklyTacticalReview;
+  if (
+    weeklyCfg?.enabled &&
+    now.getDay() === (weeklyCfg.dayOfWeek ?? 5) &&
+    currentHHMM === (weeklyCfg.time || '18:00') &&
+    state.lastFired.weeklyReviewDate !== currentDateKey
+  ) {
+    state.lastFired.weeklyReviewDate = currentDateKey;
+    await saveAutomationState(state, filePath);
+
+    try {
+      const review = await generateWeeklyTacticalReview({
+        vaultFetcher,
+        saveToFile: weeklyCfg.autoSaveMarkdown !== false,
+        currentTime: now
+      });
+      onEvent({
+        kind: 'weekly_review',
+        title: review.title,
+        message: review.markdownReport,
+        speechText: review.speechText
+      });
+    } catch (err) {
+      console.warn(`[J.A.R.V.I.S. AUTOMATION] Weekly review trigger failed: ${err.message}`);
+    }
+  }
+
+  // 7. Daily 00:00 Task Auto-Archive (Completed tasks older than archiveDays)
+  const archiveCfg = state.settings.taskAutoArchive;
+  if (
+    archiveCfg?.enabled &&
+    currentHHMM === (archiveCfg.time || '00:00') &&
+    state.lastFired.taskAutoArchiveDate !== currentDateKey
+  ) {
+    state.lastFired.taskAutoArchiveDate = currentDateKey;
+    await saveAutomationState(state, filePath);
+
+    try {
+      const result = await archiveCompletedTasks({
+        archiveDays: archiveCfg.archiveDays || 7,
+        currentTime: now
+      });
+      if (result.archivedCount > 0) {
+        onEvent({
+          kind: 'task_archive',
+          title: `📦 歷史待辦任務自動封存 [${result.archivedCount} 項]`,
+          message: `已將 ${result.archivedCount} 項超過 ${archiveCfg.archiveDays || 7} 天前完成之任務自動歸檔至歷史備存庫。`,
+          speechText: `Sir，已自動封存 ${result.archivedCount} 項已完成任務。`
+        });
+      }
+    } catch (err) {
+      console.warn(`[J.A.R.V.I.S. AUTOMATION] Task auto archive trigger failed: ${err.message}`);
+    }
+  }
+
+  // 8. Financial Asset Volatility Sentinel Check
+  if (state.settings.volatilitySentinel?.enabled) {
+    try {
+      const volAlerts = await checkMarketVolatility({
+        settings: state.settings.volatilitySentinel,
+        state,
+        filePath,
+        fetcher: marketFetcher,
+        currentTime: now
+      });
+      for (const al of volAlerts) {
+        onEvent({
+          kind: 'volatility_alert',
+          title: al.title,
+          message: al.message,
+          speechText: al.speechText
+        });
+      }
+    } catch (err) {
+      console.warn(`[J.A.R.V.I.S. AUTOMATION] Volatility sentinel check error: ${err.message}`);
+    }
+  }
+
+  // 9. Friday Afternoon Upcoming Fuel Price Alert
   const fuelCfg = state.settings.fridayFuelAlert;
   if (
     fuelCfg?.enabled &&

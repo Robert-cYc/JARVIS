@@ -1992,6 +1992,51 @@ class JarvisHudController {
           )
       },
       {
+        title: '📋 Friday Weekly Tactical Review & Report Export (週末戰術總結週報匯出)',
+        tag: 'AUTOMATION',
+        action: () =>
+          this.handleSendMessage(
+            'JARVIS，請為我生成本週週末戰術總結週報 (Weekly Tactical Review)，統計本週待辦成果、長期記憶亮點並匯出週報日誌。',
+            { muteSpeech: !this.newsVoiceEnabled }
+          )
+      },
+      {
+        title: '🔔 Taiwan Market Opening Bell (09:00 台股開盤動態戰報：大盤+台積電+自選股)',
+        tag: 'FINANCE',
+        action: () =>
+          this.handleSendMessage(
+            'JARVIS，請為我執行台灣股市開盤/盤中戰術快報 (09:00 TW Market Bell)，調閱加權指數、台積電與我的自選股行情。',
+            { muteSpeech: !this.newsVoiceEnabled }
+          )
+      },
+      {
+        title: '📊 Taiwan Market Closing Bell (13:30 台股收盤綜合盤後結算)',
+        tag: 'FINANCE',
+        action: () =>
+          this.handleSendMessage(
+            'JARVIS，請為我執行台灣股市收盤綜合結算 (13:30 TW Market Close)，統計今日大盤漲跌點數與自選股收盤表現。',
+            { muteSpeech: !this.newsVoiceEnabled }
+          )
+      },
+      {
+        title: '🗽 US Market Opening Bell (21:30 美股開盤夜間快報：標普+那指+費半+VIX+NVDA)',
+        tag: 'FINANCE',
+        action: () =>
+          this.handleSendMessage(
+            'JARVIS，請為我執行美股開盤夜間快報 (21:30 US Market Bell)，調閱標普500、那斯達克、費半、VIX恐慌指數與輝達最新行情。',
+            { muteSpeech: !this.newsVoiceEnabled }
+          )
+      },
+      {
+        title: '📦 Task Auto-Archive (歷史待辦任務自動封存：封存 7 天前完成之項目)',
+        tag: 'VAULT',
+        action: () =>
+          this.handleSendMessage(
+            'JARVIS，請為我自動封存已完成超過 7 天的歷史待辦任務，保持戰術矩陣乾淨敏捷。',
+            { muteSpeech: !this.newsVoiceEnabled }
+          )
+      },
+      {
         title: '🌐 Check Localhost Dev Services Health (檢查本機開發伺服器與 Ollama 心跳)',
         tag: 'SENTINEL',
         action: () =>

@@ -51,10 +51,14 @@ import {
   updateAutomationSettings,
   generateScheduledMorningBriefing,
   generateEndOfDayDebrief,
+  generateTaiwanMarketBell,
+  generateUsMarketBell,
+  generateWeeklyTacticalReview,
   checkServiceHealth,
   checkUptimeSentinel,
   restartOllamaService
 } from './services/automationService.js';
+import { archiveCompletedTasks } from './services/memoryVaultService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -530,6 +534,32 @@ export function createServer() {
       if (req.method === 'POST' && pathname === '/api/automation/briefing') {
         const briefing = await generateScheduledMorningBriefing();
         sendJson(res, 200, briefing);
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/automation/market/tw') {
+        const body = await readJsonBody(req);
+        const report = await generateTaiwanMarketBell({ type: body.type === 'close' ? 'close' : 'open' });
+        sendJson(res, 200, report);
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/automation/market/us') {
+        const report = await generateUsMarketBell();
+        sendJson(res, 200, report);
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/automation/weekly-review') {
+        const review = await generateWeeklyTacticalReview({ saveToFile: true });
+        sendJson(res, 200, review);
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/automation/tasks/archive') {
+        const body = await readJsonBody(req);
+        const result = await archiveCompletedTasks({ archiveDays: Number(body.archiveDays) || 7 });
+        sendJson(res, 200, result);
         return;
       }
 
