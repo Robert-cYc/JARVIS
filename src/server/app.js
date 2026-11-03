@@ -19,7 +19,16 @@ import {
   generateMorningBriefing,
   fetchHackerNewsTop,
   searchArxivPapers,
-  searchGithubRepos
+  searchGithubRepos,
+  generateQrCode,
+  getWorldTimeMatrix,
+  formatWorldTimeBriefing,
+  fetchTaiwanInvoiceNumbers,
+  checkInvoiceWinning,
+  formatTaiwanInvoiceBriefing,
+  fetchProcessSnapshot,
+  formatProcessBriefing,
+  terminateProcessTarget
 } from './services/webSkillsService.js';
 import {
   runCyberSecurityScan,
@@ -59,6 +68,9 @@ import {
   restartOllamaService
 } from './services/automationService.js';
 import { archiveCompletedTasks } from './services/memoryVaultService.js';
+import { installConsoleTimestampInterceptor } from './utils/logger.js';
+
+installConsoleTimestampInterceptor();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -397,6 +409,58 @@ export function createServer() {
         }
         const arxiv = await searchArxivPapers(query || 'large language models', 5);
         sendJson(res, 200, arxiv);
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/skills/qrcode') {
+        const body = await readJsonBody(req);
+        const { text, ecLevel, size } = body;
+        const result = generateQrCode(text || 'https://github.com', { ecLevel, size });
+        sendJson(res, 200, result);
+        return;
+      }
+
+      if (req.method === 'GET' && pathname === '/api/skills/world-time') {
+        const city = parsedUrl.searchParams.get('city') || null;
+        const briefing = formatWorldTimeBriefing(new Date(), city);
+        const matrix = getWorldTimeMatrix(new Date());
+        sendJson(res, 200, { success: true, matrix, ...briefing });
+        return;
+      }
+
+      if (req.method === 'GET' && pathname === '/api/skills/invoices') {
+        const invoices = await fetchTaiwanInvoiceNumbers();
+        const briefing = formatTaiwanInvoiceBriefing(invoices);
+        sendJson(res, 200, { success: true, invoices, ...briefing });
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/skills/invoices/check') {
+        const body = await readJsonBody(req);
+        const { number } = body;
+        const invoices = await fetchTaiwanInvoiceNumbers();
+        let checkResult = null;
+        if (invoices.length > 0) {
+          checkResult = checkInvoiceWinning(number || '', invoices[0]);
+        }
+        const briefing = formatTaiwanInvoiceBriefing(invoices, checkResult, number || '');
+        sendJson(res, 200, { success: true, checkResult, invoices, ...briefing });
+        return;
+      }
+
+      if (req.method === 'GET' && pathname === '/api/system/processes') {
+        const limit = parseInt(parsedUrl.searchParams.get('limit') || '10', 10);
+        const snapshot = await fetchProcessSnapshot({ limit });
+        const briefing = formatProcessBriefing(snapshot);
+        sendJson(res, 200, { success: true, ...snapshot, ...briefing });
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/system/processes/kill') {
+        const body = await readJsonBody(req);
+        const { pid, name, force } = body;
+        const result = await terminateProcessTarget({ pid, name, force });
+        sendJson(res, result.success ? 200 : 400, result);
         return;
       }
 

@@ -86,4 +86,20 @@ describe('J.A.R.V.I.S. Unified Launcher (run.js)', () => {
       await new Promise((resolve) => server.close(resolve));
     }
   });
+
+  it('validates macOS autorun.command script and autorun.sh symlink', async () => {
+    const projectDir = path.resolve(import.meta.dirname, '..');
+    const commandPath = path.join(projectDir, 'autorun.command');
+    const shPath = path.join(projectDir, 'autorun.sh');
+
+    // Both files should exist
+    await fs.access(commandPath, fs.constants.X_OK);
+    await fs.access(shPath, fs.constants.X_OK);
+
+    // Verify script content contains essential macOS initialization
+    const content = await fs.readFile(commandPath, 'utf-8');
+    assert.ok(content.startsWith('#!/usr/bin/env bash'), 'Must have bash shebang');
+    assert.ok(content.includes('find_node_binary'), 'Must include node resolution logic');
+    assert.ok(content.includes('install_startup_service'), 'Must include LaunchAgent support');
+  });
 });

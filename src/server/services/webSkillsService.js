@@ -14,6 +14,24 @@ import {
   executeConversionSkill
 } from './conversionService.js';
 import { generateEndOfDayDebrief } from './automationService.js';
+import { generateQrCode, formatWifiPayload } from './qrCodeService.js';
+import {
+  getWorldTimeMatrix,
+  formatWorldTimeBriefing,
+  matchCityFromQuery
+} from './worldTimeService.js';
+import {
+  fetchTaiwanInvoiceNumbers,
+  checkInvoiceWinning,
+  formatTaiwanInvoiceBriefing
+} from './taiwanInvoiceService.js';
+import {
+  fetchProcessSnapshot,
+  formatProcessBriefing,
+  terminateProcessTarget,
+  detectProcessIntent,
+  isProtectedProcess
+} from './processManagerService.js';
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -1408,6 +1426,18 @@ export function detectWebSkillIntent(userMessage, forceWebSearch = false) {
     return { intent: 'cyber_scan', query: text };
   }
 
+  // 0.15 Check for Process Manager & Resource Hog Sentinel
+  const procCheck = detectProcessIntent(text);
+  if (procCheck.isProcessCommand) {
+    return {
+      intent: 'process_management',
+      query: text,
+      processAction: procCheck.action,
+      pid: procCheck.pid,
+      targetName: procCheck.targetName
+    };
+  }
+
   // 0.2 Check for Quantum Sandbox Math / Hash / Base64 / UUID
   if (
     /(?:\bsha256\b|\bmd5\b|\bbase64\b|\buuid\b|幫我算|計算一下|精確計算|calculate\s+|evaluate\s+)/i.test(
@@ -1452,6 +1482,34 @@ export function detectWebSkillIntent(userMessage, forceWebSearch = false) {
       )
       .trim();
     return { intent: 'github', query: cleaned || 'ai agent' };
+  }
+
+  // 0.55 Check for Native SVG QR Code Generator Intent
+  if (/(?:產生|生成|做|製作|轉成|印出)?\s*(?:qr\s*code|qrcode|二維碼|行動條碼)/i.test(text)) {
+    return { intent: 'qr_code', query: text };
+  }
+
+  // 0.56 Check for Taiwan Invoice Lottery & Prize Check Intent
+  if (/(統一發票|發票開獎|發票中獎|發票對獎|對發票|發票號碼|發票末三碼|中獎號碼|開獎號碼|發票\s*\d{3,8})/i.test(text)) {
+    const numMatch = text.match(/\b\d{3,8}\b/);
+    return {
+      intent: 'taiwan_invoice',
+      query: text,
+      checkNumber: numMatch ? numMatch[0] : null
+    };
+  }
+
+  // 0.57 Check for World Time & Timezone Matrix Intent
+  const matchedCity = matchCityFromQuery(text);
+  if (
+    /(世界時區|全球時區|各國時間|各國時區|國際時間|時差|world\s*time|timezones?)/i.test(text) ||
+    (matchedCity && /(時間|幾點|現在|時差|time)/i.test(text))
+  ) {
+    return {
+      intent: 'world_time',
+      query: text,
+      matchedCity: matchedCity ? matchedCity.name : null
+    };
   }
 
   // 0.6 Check for Current Clock / Time Intent (報時 / 現在幾點 / What time is it)
@@ -1668,6 +1726,36 @@ export async function executeWebSkillForMessage(
     };
   }
 
+  if (detected.intent === 'process_management') {
+    if (detected.processAction === 'kill') {
+      const res = await terminateProcessTarget({
+        pid: detected.pid,
+        name: detected.targetName
+      });
+      return {
+        executed: true,
+        skill: 'process_management',
+        items: [
+          {
+            title: res.message,
+            link: '#',
+            source: res.success ? 'Stark Process Sentinel' : 'Security Alert'
+          }
+        ],
+        contextBlock: `[STARK PROCESS SENTINEL // 行程終止指令執行結果]:\n${res.message}\n`
+      };
+    }
+
+    const snapshot = await fetchProcessSnapshot({ limit: 10 });
+    const briefing = formatProcessBriefing(snapshot);
+    return {
+      executed: true,
+      skill: 'process_management',
+      items: briefing.items || [],
+      contextBlock: briefing.summaryText
+    };
+  }
+
   if (detected.intent === 'sandbox_calc') {
     const res = evaluateQuantumSandbox(detected.query);
     return {
@@ -1684,6 +1772,81 @@ export async function executeWebSkillForMessage(
       executed: res.executed,
       skill: res.skill,
       items: res.items || [],
+      contextBlock: res.summaryText
+    };
+  }
+
+  if (detected.intent === 'qr_code') {
+    let payload = (detected.query || '')
+      .replace(/^(JARVIS|賈維斯)?[，,\s]*(請|幫我|可以幫我)?(產生|生成|做|製作|轉成|印出)?\s*(qr\s*code|qrcode|二維碼|行動條碼)\s*(為|成|：|:)?/i, '')
+      .replace(/(的\s*(qr\s*code|qrcode|二維碼|條碼)|[，。！？?.,])$/gi, '')
+      .trim();
+
+    const urlMatch = (detected.query || '').match(/https?:\/\/[^\s<>")]+/i);
+    if (urlMatch) {
+      payload = urlMatch[0];
+    } else if (!payload) {
+      payload = 'https://github.com';
+    }
+
+    const qrResult = generateQrCode(payload, {
+      size: 260,
+      darkColor: '#00e5ff',
+      lightColor: '#07101e'
+    });
+
+    if (!qrResult.success) {
+      return {
+        executed: true,
+        skill: 'qr_code',
+        items: [],
+        contextBlock: `⚠️ 產生 QR Code 失敗: ${qrResult.error}`
+      };
+    }
+
+    const contextBlock =
+      `[STARK QR CODE GENERATOR // 矩陣條碼產生完成]:\n` +
+      `- 內容 (Payload): ${qrResult.payload}\n` +
+      `- 規格: Version ${qrResult.version} (${qrResult.matrixSize}x${qrResult.matrixSize}), 容錯等級: ${qrResult.ecLevel} (15%)\n` +
+      `- Data URI: ${qrResult.dataUrl}\n\n` +
+      `ASCII Preview:\n\`\`\`\n${qrResult.ascii}\n\`\`\`\n` +
+      `[CRITICAL DIRECTIVE: Inform the user that the QR code has been generated. Include the ASCII preview codeblock and note that they can scan it or click/copy the generated image.]`;
+
+    return {
+      executed: true,
+      skill: 'qr_code',
+      items: [
+        {
+          title: `📱 QR Code: ${qrResult.payload.slice(0, 35)}`,
+          link: qrResult.dataUrl,
+          source: `Version ${qrResult.version} (${qrResult.matrixSize}x${qrResult.matrixSize})`
+        }
+      ],
+      contextBlock
+    };
+  }
+
+  if (detected.intent === 'world_time') {
+    const res = formatWorldTimeBriefing(new Date(), detected.matchedCity);
+    return {
+      executed: true,
+      skill: 'world_time',
+      items: res.items,
+      contextBlock: res.summaryText
+    };
+  }
+
+  if (detected.intent === 'taiwan_invoice') {
+    const invoices = await fetchTaiwanInvoiceNumbers();
+    let checkResult = null;
+    if (detected.checkNumber && invoices.length > 0) {
+      checkResult = checkInvoiceWinning(detected.checkNumber, invoices[0]);
+    }
+    const res = formatTaiwanInvoiceBriefing(invoices, checkResult, detected.checkNumber || '');
+    return {
+      executed: true,
+      skill: 'taiwan_invoice',
+      items: res.items,
       contextBlock: res.summaryText
     };
   }
@@ -2098,3 +2261,20 @@ export function detectTimerCommand(userMessage) {
 
   return null;
 }
+
+export {
+  generateQrCode,
+  formatWifiPayload,
+  getWorldTimeMatrix,
+  formatWorldTimeBriefing,
+  matchCityFromQuery,
+  fetchTaiwanInvoiceNumbers,
+  checkInvoiceWinning,
+  formatTaiwanInvoiceBriefing,
+  fetchProcessSnapshot,
+  formatProcessBriefing,
+  terminateProcessTarget,
+  detectProcessIntent,
+  isProtectedProcess
+};
+

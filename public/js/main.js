@@ -2037,6 +2037,46 @@ class JarvisHudController {
           )
       },
       {
+        title: '🧾 Taiwan Invoice Lottery & Prize Check (台灣統一發票中獎號碼查詢與即時對獎)',
+        tag: 'FISCAL TELEMETRY',
+        action: () =>
+          this.handleSendMessage(
+            'JARVIS，請查詢最新一期台灣統一發票中獎號碼，並顯示各獎項號碼與獎金。',
+            { muteSpeech: !this.newsVoiceEnabled }
+          )
+      },
+      {
+        title: '🌐 Global Chronometer & Timezone Matrix (全球主要城市時區矩陣與時差對照)',
+        tag: 'WORLD CHRONOMETER',
+        action: () =>
+          this.handleSendMessage(
+            'JARVIS，請列出全球主要金融中心與科技重鎮的即時時區矩陣 (台北、東京、倫敦、紐約、舊金山、蘇黎世等)。',
+            { muteSpeech: !this.newsVoiceEnabled }
+          )
+      },
+      {
+        title: '📱 Precision SVG QR Code Generator (原生向量 QR Code 產生器)',
+        tag: 'UTILITY LABS',
+        action: () => {
+          const url = prompt('請輸入欲產生 QR Code 之網址或文字內容 (Enter URL or text):', 'https://github.com');
+          if (url && url.trim()) {
+            this.handleSendMessage(
+              `JARVIS，請幫我產生一個 QR Code：${url.trim()}`,
+              { muteSpeech: !this.newsVoiceEnabled }
+            );
+          }
+        }
+      },
+      {
+        title: '⚡ Inspect Top Resource Hog Processes (系統處理程序與暴走行程雷達)',
+        tag: 'SENTINEL',
+        action: () =>
+          this.handleSendMessage(
+            'JARVIS，請調閱本機行程與資源暴走雷達 (Process & Resource Sentinel)，檢查佔用最多記憶體與 CPU 的處理程序。',
+            { muteSpeech: !this.newsVoiceEnabled }
+          )
+      },
+      {
         title: '🌐 Check Localhost Dev Services Health (檢查本機開發伺服器與 Ollama 心跳)',
         tag: 'SENTINEL',
         action: () =>

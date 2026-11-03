@@ -2,6 +2,9 @@ import { createServer, listenWithPortFallback } from './app.js';
 import { startAlertMonitor, stopAlertMonitor, pushAlertEvent } from './services/alertService.js';
 import { fetchAlertQuotes } from './services/webSkillsService.js';
 import { startAutomationScheduler, stopAutomationScheduler } from './services/automationService.js';
+import { installConsoleTimestampInterceptor } from './utils/logger.js';
+
+installConsoleTimestampInterceptor();
 
 const PREFERRED_PORT = Number(process.env.PORT) || 63219;
 const server = createServer();

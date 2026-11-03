@@ -56,6 +56,8 @@
 
 ```text
 JARVIS/
+├── autorun.command                  # macOS 雙擊一鍵自動啟動腳本 (Finder 原生執行)
+├── autorun.sh                       # macOS / Linux 終端機一鍵啟動腳本 (symlink)
 ├── autorun.bat                      # Windows 雙擊一鍵自動啟動腳本
 ├── run.js                           # 一鍵整合啟動器 (.env 初始化 / Ollama 自動啟動 / 伺服器與瀏覽器啟動)
 ├── .env.example                     # 環境變數範本
@@ -119,6 +121,13 @@ ANTHROPIC_API_KEY=
 直接使用單一入口檔 `run.js`（或 `npm start`）即可自動完成 `.env` 初始化、背景喚醒 Ollama、記憶庫載入、連接埠自動避讓並開啟瀏覽器：
 
 ```bash
+# macOS 雙擊或命令列執行（任選一種）
+# 方式 1：於 Finder 中直接雙擊 autorun.command 即可啟動
+# 方式 2：終端機執行
+./autorun.command
+# 或
+./autorun.sh
+
 # Windows 雙擊或命令列執行
 .\autorun.bat
 
@@ -135,6 +144,18 @@ node run.js --skip-ollama           # 略過本地 Ollama 自動喚醒
 # 開發模式（自動監聽檔案變更重啟）
 npm run dev
 ```
+
+#### macOS 開機與登入自動背景啟動 (LaunchAgent)
+
+若希望 Mac 開機或登入帳號時自動在背景啟動 J.A.R.V.I.S.，可使用內建的服務管理參數：
+
+```bash
+./autorun.command --install-startup    # 註冊為 macOS LaunchAgent 背景自啟動服務
+./autorun.command --status-startup     # 檢視 LaunchAgent 運行狀態
+./autorun.command --uninstall-startup  # 解除 LaunchAgent 開機自啟動
+```
+
+> **小提示**：亦可直接打開 macOS「系統設定 > 一般 > 登入項目 (Login Items)」，將 `autorun.command` 加入為登入項目。
 
 啟動後，請在瀏覽器開啟：
 **[http://localhost:63219](http://localhost:63219)**

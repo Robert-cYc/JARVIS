@@ -10,6 +10,9 @@ import { getVaultState } from './src/server/services/memoryVaultService.js';
 import { startAlertMonitor, stopAlertMonitor, pushAlertEvent } from './src/server/services/alertService.js';
 import { fetchAlertQuotes } from './src/server/services/webSkillsService.js';
 import { startAutomationScheduler, stopAutomationScheduler } from './src/server/services/automationService.js';
+import { installConsoleTimestampInterceptor } from './src/server/utils/logger.js';
+
+installConsoleTimestampInterceptor();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
